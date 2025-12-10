@@ -1,0 +1,44 @@
+export default {
+  expo: {
+    name: "CarsTuneUp Employee",
+    slug: "carstuneup-employee",
+    version: "1.0.0",
+    orientation: "portrait",
+    userInterfaceStyle: "light",
+    splash: {
+      resizeMode: "contain",
+      backgroundColor: "#007BFF"
+    },
+    assetBundlePatterns: [
+      "**/*"
+    ],
+    ios: {
+      supportsTablet: true,
+      bundleIdentifier: "com.carstuneup.employee"
+    },
+    android: {
+      adaptiveIcon: {
+        backgroundColor: "#007BFF"
+      },
+      package: "com.carstuneup.employee",
+      permissions: [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE"
+      ]
+    },
+    web: {
+      bundler: "metro"
+    },
+    plugins: [
+      "expo-font",
+      "expo-image-picker",
+      "expo-location"
+    ],
+    extra: {
+      apiUrl: process.env.EXPO_PUBLIC_API_URL || null
+    }
+  }
+};
