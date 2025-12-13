@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,7 @@ import {
   FlatList,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import api from '../config/api';
 import { useApp } from '../context/AppContext';
 
@@ -43,7 +44,7 @@ const resolveImageSource = (url) => {
 export default function VehicleSelectionScreen({ navigation, route }) {
   const { fromProfile = false, fromHome = false } = route.params || {};
   const { refreshVehicles, vehicles, selectVehicle, selectedVehicleId, deleteVehicle } = useApp();
-  
+
   const [step, setStep] = useState(1); // 1: Brand, 2: Model
   const [selectedBrand, setSelectedBrand] = useState('');
   const [selectedModel, setSelectedModel] = useState('');
@@ -54,68 +55,77 @@ export default function VehicleSelectionScreen({ navigation, route }) {
   const [brandsLoading, setBrandsLoading] = useState(true);
   const [brandsError, setBrandsError] = useState('');
   const [showVehicleList, setShowVehicleList] = useState(false);
+  const isMountedRef = useRef(true);
 
   useEffect(() => {
-    let isMounted = true;
-
-    const fetchBrands = async () => {
-      try {
-        setBrandsLoading(true);
-        setBrandsError('');
-
-        const response = await api.get('/brands', {
-          params: { isActive: true }
-        });
-
-        if (!isMounted) return;
-
-        console.log('Raw API response:', response.data);
-        console.log('Brands data:', response.data?.data?.brands);
-
-        const remoteBrands = response.data?.data?.brands || [];
-        const formattedBrands = remoteBrands
-          .filter((brand) => brand.isActive !== false)
-          .map((brand) => ({
-            id: brand._id,
-            name: brand.name,
-            logo: brand.logo,
-            models: (brand.models || [])
-              .filter((model) => model.isActive !== false)
-              .map((model) => {
-                if (typeof model === 'string') {
-                  return { name: model, image: '', serviceType: 'hatchback-sedan' };
-                }
-                return {
-                  ...model,
-                  serviceType: normalizeVehicleType(model.serviceType),
-                };
-              })
-          }))
-          .filter((brand) => brand.models.length > 0);
-
-        setBrands(formattedBrands);
-
-        if (formattedBrands.length === 0) {
-          setBrandsError('No active car brands available.');
-        }
-      } catch (error) {
-        console.error('Error fetching brands:', error);
-        if (isMounted) {
-          setBrandsError('Failed to load car brands. Pull to refresh or try again later.');
-        }
-      } finally {
-        if (isMounted) {
-          setBrandsLoading(false);
-        }
-      }
-    };
-
-    fetchBrands();
-
     return () => {
-      isMounted = false;
+      isMountedRef.current = false;
     };
   }, []);
+
+  const fetchBrands = useCallback(async () => {
+    if (!isMountedRef.current) return;
+
+    setBrandsLoading(true);
+    setBrandsError('');
+
+    try {
+      const response = await api.get('/brands', {
+        params: { isActive: true }
+      });
+
+      if (!isMountedRef.current) return;
+
+      console.log('Raw API response:', response.data);
+      console.log('Brands data:', response.data?.data?.brands);
+
+      const remoteBrands = response.data?.data?.brands || [];
+      const formattedBrands = remoteBrands
+        .filter((brand) => brand.isActive !== false)
+        .map((brand) => ({
+          id: brand._id,
+          name: brand.name,
+          logo: brand.logo,
+          models: (brand.models || [])
+            .filter((model) => model.isActive !== false)
+            .map((model) => {
+              if (typeof model === 'string') {
+                return { name: model, image: '', serviceType: 'hatchback-sedan' };
+              }
+              return {
+                ...model,
+                serviceType: normalizeVehicleType(model.serviceType),
+              };
+            })
+        }))
+        .filter((brand) => brand.models.length > 0);
+
+      if (!isMountedRef.current) return;
+
+      setBrands(formattedBrands);
+
+      if (formattedBrands.length === 0) {
+        setBrandsError('No active car brands available.');
+      }
+    } catch (error) {
+      console.error('Error fetching brands:', error);
+      if (!isMountedRef.current) return;
+      setBrandsError('Failed to load car brands. Pull to refresh or try again later.');
+    } finally {
+      if (!isMountedRef.current) return;
+      setBrandsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchBrands();
+  }, [fetchBrands]);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchBrands();
+    }, [fetchBrands])
+  );
 
   const filteredBrands = brands.filter((brand) =>
     brand.name.toLowerCase().includes(brandSearch.toLowerCase())
@@ -175,8 +185,8 @@ export default function VehicleSelectionScreen({ navigation, route }) {
 
       const savedVehicle = response.data.data.vehicle;
       
-      await refreshVehicles();
-      await selectVehicle(savedVehicle.id);
+      const updatedVehicles = await refreshVehicles();
+      await selectVehicle(savedVehicle.id, { vehicles: updatedVehicles });
 
       Alert.alert(
         'Success',
@@ -275,45 +285,22 @@ export default function VehicleSelectionScreen({ navigation, route }) {
     );
   };
 
-  // Get unique models with their vehicles
-  const getUniqueModels = () => {
-    const modelMap = new Map();
-    vehicles.forEach(vehicle => {
-      const key = `${vehicle.brand}-${vehicle.model}`;
-      if (!modelMap.has(key)) {
-        modelMap.set(key, {
-          brand: vehicle.brand,
-          model: vehicle.model,
-          vehicles: [],
-          count: 0
-        });
-      }
-      modelMap.get(key).vehicles.push(vehicle);
-      modelMap.get(key).count++;
-    });
-    return Array.from(modelMap.values());
-  };
-
-  const handleDeleteModel = (brand, model) => {
+  const handleDeleteVehicleEntry = (vehicle) => {
     Alert.alert(
-      'Delete Model',
-      `Are you sure you want to delete all ${brand} ${model} vehicles? This will remove ${vehicles.filter(v => v.brand === brand && v.model === model).length} vehicle(s) from your profile.`,
+      'Remove Vehicle',
+      `Are you sure you want to remove the ${vehicle.brand} ${vehicle.model} from your saved vehicles? You can add it again anytime.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Delete',
+          text: 'Remove',
           style: 'destructive',
           onPress: async () => {
             try {
-              // Delete all vehicles of this model
-              const vehiclesToDelete = vehicles.filter(v => v.brand === brand && v.model === model);
-              for (const vehicle of vehiclesToDelete) {
-                await deleteVehicle(vehicle.id);
-              }
+              await deleteVehicle(vehicle.id);
               
               Alert.alert(
-                'Model Deleted',
-                `All ${brand} ${model} vehicles have been removed from your profile.`,
+                'Vehicle Removed',
+                `${vehicle.brand} ${vehicle.model} has been removed from your profile.`,
                 [
                   {
                     text: 'OK',
@@ -328,8 +315,8 @@ export default function VehicleSelectionScreen({ navigation, route }) {
                 ]
               );
             } catch (error) {
-              console.error('Error deleting model:', error);
-              Alert.alert('Error', 'Failed to delete model. Please try again.');
+              console.error('Error removing vehicle:', error);
+              Alert.alert('Error', 'Failed to remove vehicle. Please try again.');
             }
           }
         }
@@ -402,37 +389,36 @@ export default function VehicleSelectionScreen({ navigation, route }) {
             </View>
           ) : (
             <FlatList
-              data={getUniqueModels()}
-              keyExtractor={(item) => `${item.brand}-${item.model}`}
+              data={vehicles}
+              keyExtractor={(item) => item.id}
               renderItem={({ item }) => (
                 <View style={[
                   styles.vehicleItem,
-                  selectedVehicleId && vehicles.find(v => v.id === selectedVehicleId)?.brand === item.brand && vehicles.find(v => v.id === selectedVehicleId)?.model === item.model && styles.selectedVehicleItem
+                  selectedVehicleId === item.id && styles.selectedVehicleItem
                 ]}>
-                  <TouchableOpacity 
-                    style={styles.vehicleInfo}
-                    onPress={() => handleSelectExistingVehicle(item.vehicles[0])}
-                  >
-                    <View style={styles.vehicleIcon}>
-                      <Ionicons name="car" size={24} color="#1453b4" />
-                    </View>
-                    <View style={styles.vehicleDetails}>
-                      <Text style={styles.vehicleName}>{item.brand} {item.model}</Text>
-                      <Text style={styles.vehicleSubtitle}>
-                        {item.count > 1 ? `${item.count} vehicles` : '1 vehicle'}
-                      </Text>
-                      <Text style={styles.vehicleStatus}>
-                        {selectedVehicleId && vehicles.find(v => v.id === selectedVehicleId)?.brand === item.brand && vehicles.find(v => v.id === selectedVehicleId)?.model === item.model 
-                          ? 'Currently Active' : 'Tap to activate'}
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-                  <TouchableOpacity 
-                    style={styles.deleteButton}
-                    onPress={() => handleDeleteModel(item.brand, item.model)}
-                  >
-                    <Ionicons name="trash-outline" size={20} color="#dc3545" />
-                  </TouchableOpacity>
+                <TouchableOpacity 
+                  style={styles.vehicleInfo}
+                  onPress={() => handleSelectExistingVehicle(item)}
+                >
+                  <View style={styles.vehicleIcon}>
+                    <Ionicons name="car" size={24} color="#1453b4" />
+                  </View>
+                  <View style={styles.vehicleDetails}>
+                    <Text style={styles.vehicleName}>{item.brand} {item.model}</Text>
+                    {item.licensePlate ? (
+                      <Text style={styles.vehicleSubtitle}>{item.licensePlate}</Text>
+                    ) : null}
+                    <Text style={styles.vehicleStatus}>
+                      {selectedVehicleId === item.id ? 'Currently Active' : 'Tap to activate'}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={styles.deleteButton}
+                  onPress={() => handleDeleteVehicleEntry(item)}
+                >
+                  <Ionicons name="trash-outline" size={20} color="#dc3545" />
+                </TouchableOpacity>
                 </View>
               )}
               contentContainerStyle={styles.vehicleListContainer}
@@ -911,8 +897,8 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   vehicleStatus: {
-    fontSize: 14,
-    color: '#666',
+    fontSize: 13,
+    color: '#6c757d',
   },
   deleteButton: {
     padding: 8,

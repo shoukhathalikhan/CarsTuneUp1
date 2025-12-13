@@ -14,12 +14,11 @@ import {
   Linking,
   RefreshControl,
   Modal,
-  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import DateTimePicker from '@react-native-community/datetimepicker';
 import api from '../config/api';
 import { useApp } from '../context/AppContext';
+import { useCart } from '../context/CartContext';
 
 const FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=1080&h=720&fit=crop&crop=center';
 
@@ -47,9 +46,42 @@ const MAPS_URL = `https://www.google.com/maps/search/?api=1&query=${encodeURICom
 
 const TAB_ITEMS = [
   { key: 'about', label: 'About', icon: 'information-circle' },
-  { key: 'services', label: 'Services', icon: 'checkmark-done' },
-  { key: 'gallery', label: 'Gallery', icon: 'images' },
-  { key: 'reviews', label: 'Reviews', icon: 'chatbubbles' }
+  { key: 'addons', label: 'Add-ons', icon: 'add-circle' },
+  { key: 'reviews', label: 'Reviews', icon: 'star' }
+];
+
+const ADD_ONS = [
+  { id: 'microfiber', name: 'Micro Fiber Cloth', price: 100 },
+  { id: 'engine', name: 'Engine Bay Cleaning', price: 100 },
+  { id: 'alloy', name: 'Alloy Wheels Cleaning', price: 100 },
+  { id: 'logo', name: 'Logo Cleaning', price: 100 }
+];
+
+const STATIC_REVIEWS = [
+  {
+    id: 'review1',
+    customerName: 'Rajesh Kumar',
+    customerInitials: 'RK',
+    rating: 5,
+    feedback: 'Very professional service, car looks brand new!',
+    createdAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+  },
+  {
+    id: 'review2',
+    customerName: 'Priya Singh',
+    customerInitials: 'PS',
+    rating: 5,
+    feedback: 'Excellent attention to detail. Highly recommend!',
+    createdAt: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString()
+  },
+  {
+    id: 'review3',
+    customerName: 'Amit Patel',
+    customerInitials: 'AP',
+    rating: 4,
+    feedback: 'Great service, very punctual and thorough.',
+    createdAt: new Date(Date.now() - 21 * 24 * 60 * 60 * 1000).toISOString()
+  }
 ];
 
 const WHATSAPP_NUMBER = SUPPORT_NUMBER.replace('+', '');
@@ -165,20 +197,17 @@ const getCardImageSource = (source) => {
 export default function ServiceDetailScreen({ route, navigation }) {
   const { service } = route.params;
   const { currentVehicle } = useApp();
-  const [loading, setLoading] = useState(false);
+  const { addToCart } = useCart();
   const [activeTab, setActiveTab] = useState('about');
   const [overviewData, setOverviewData] = useState(null);
   const [overviewLoading, setOverviewLoading] = useState(true);
   const [overviewError, setOverviewError] = useState('');
   const [refreshing, setRefreshing] = useState(false);
-  const [showAllModal, setShowAllModal] = useState(false);
-  const [inclusionFilter, setInclusionFilter] = useState('included');
-  const [selectedStartDate, setSelectedStartDate] = useState(new Date());
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [datePickerMode, setDatePickerMode] = useState('date');
+  const [selectedAddOns, setSelectedAddOns] = useState({});
+  const [showAddOnsModal, setShowAddOnsModal] = useState(false);
+  const [serviceReviews, setServiceReviews] = useState([]);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const tabContentAnim = useRef(new Animated.Value(1)).current;
-  const inclusionAnim = useRef(new Animated.Value(1)).current;
 
   const heroImage = useMemo(() => resolveImageUrl(service.imageURL), [service.imageURL]);
 
@@ -197,6 +226,18 @@ export default function ServiceDetailScreen({ route, navigation }) {
       
       const response = await api.get(`/services/${service._id}/overview`, { params });
       setOverviewData(response.data?.data || null);
+      
+      // Fetch service reviews from feedback/top endpoint (same as Home page)
+      try {
+        const reviewsResponse = await api.get('/feedback/top');
+        if (reviewsResponse.data.status === 'success') {
+          setServiceReviews(reviewsResponse.data.data.feedback || []);
+        }
+      } catch (reviewError) {
+        console.error('Error fetching reviews:', reviewError);
+        setServiceReviews([]);
+      }
+      
       Animated.timing(fadeAnim, {
         toValue: 1,
         duration: 500,
@@ -220,71 +261,9 @@ export default function ServiceDetailScreen({ route, navigation }) {
     fetchOverview();
   };
 
-  // Date picker functions
-  const showDatePickerModal = () => {
-    console.log('🗓️ Opening date picker, current date:', selectedStartDate);
-    setShowDatePicker(true);
-  };
-
-  const hideDatePicker = () => {
-    setShowDatePicker(false);
-  };
-
-  const handleDateChange = (event, selectedDate) => {
-    console.log('🗓️ Date picker event:', event.type, 'selectedDate:', selectedDate);
-    
-    if (event.type === 'set' && selectedDate) {
-      console.log('🗓️ Date set to:', selectedDate);
-      setSelectedStartDate(selectedDate);
-    }
-    
-    // Hide picker after selection or cancellation
-    if (event.type === 'set' || event.type === 'dismissed') {
-      setShowDatePicker(false);
-    }
-  };
-
-  const formatDate = (date) => {
-    return date.toLocaleDateString('en-US', {
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    });
-  };
-
-  const handleSubscribe = async () => {
-    console.log('🗓️ Subscribing with start date:', selectedStartDate);
-    setLoading(true);
-    try {
-      const response = await api.post('/subscriptions', {
-        serviceId: service._id,
-        startDate: selectedStartDate, // Send user-selected date
-      });
-
-      const subscription = response.data.data.subscription;
-      const startDate = new Date(subscription.startDate);
-      const formattedDate = formatDate(startDate);
-
-      Alert.alert(
-        'Success',
-        `Subscription created successfully!\n\nStart Date: ${formattedDate}\n\nYour first wash will be scheduled for ${formatDate(startDate)}.`,
-        [
-          {
-            text: 'OK',
-            onPress: () => navigation.navigate('Subscriptions'),
-          },
-        ]
-      );
-    } catch (error) {
-      console.error('Subscription error:', error);
-      Alert.alert(
-        'Error',
-        error.response?.data?.message || 'Unable to create subscription'
-      );
-    } finally {
-      setLoading(false);
-    }
+  const handleAddToCart = () => {
+    addToCart(service, selectedAddOns);
+    navigation.navigate('Cart');
   };
 
   const resolvedService = useMemo(() => {
@@ -360,39 +339,51 @@ export default function ServiceDetailScreen({ route, navigation }) {
     { key: 'share', label: 'Share', icon: 'share-social', onPress: handleShareService }
   ];
 
-  const animateTabSwap = (nextTab) => {
-    if (nextTab === activeTab) return;
+  const animateTabSwap = (tabKey) => {
+    setActiveTab(tabKey);
     Animated.sequence([
-      Animated.timing(tabContentAnim, {
-        toValue: 0.9,
-        duration: 120,
-        useNativeDriver: true
+      Animated.timing(fadeAnim, {
+        toValue: 0,
+        duration: 150,
+        useNativeDriver: true,
       }),
       Animated.timing(tabContentAnim, {
-        toValue: 1,
-        duration: 180,
-        useNativeDriver: true
-      })
+        toValue: 0.95,
+        duration: 0,
+        useNativeDriver: true,
+      }),
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 250,
+          useNativeDriver: true,
+        }),
+        Animated.timing(tabContentAnim, {
+          toValue: 1,
+          duration: 250,
+          useNativeDriver: true,
+        }),
+      ]),
     ]).start();
-    setActiveTab(nextTab);
   };
 
-  const animateInclusionSwap = (nextFilter) => {
-    if (nextFilter === inclusionFilter) return;
-    Animated.sequence([
-      Animated.timing(inclusionAnim, {
-        toValue: 0.92,
-        duration: 120,
-        useNativeDriver: true
-      }),
-      Animated.timing(inclusionAnim, {
-        toValue: 1,
-        duration: 160,
-        useNativeDriver: true
-      })
-    ]).start();
-    setInclusionFilter(nextFilter);
+  const toggleAddOn = (addOnId) => {
+    setSelectedAddOns(prev => ({
+      ...prev,
+      [addOnId]: !prev[addOnId]
+    }));
   };
+
+  const totalAddOnPrice = useMemo(() => {
+    return ADD_ONS.reduce((sum, addon) => {
+      return selectedAddOns[addon.id] ? sum + addon.price : sum;
+    }, 0);
+  }, [selectedAddOns]);
+
+  const totalPrice = useMemo(() => {
+    const servicePrice = Number(resolvedService.price) || 0;
+    return servicePrice + totalAddOnPrice;
+  }, [totalAddOnPrice]);
 
   const renderStars = (rating = 0) => {
     const items = [];
@@ -409,7 +400,7 @@ export default function ServiceDetailScreen({ route, navigation }) {
           key={`star-${i}`}
           name={icon}
           size={14}
-          color="#facc15"
+          color="#1453b4"
         />
       );
     }
@@ -418,119 +409,109 @@ export default function ServiceDetailScreen({ route, navigation }) {
 
   const renderTabContent = () => {
     switch (activeTab) {
-      case 'services':
+      case 'addons':
         return (
           <View style={styles.tabSection}>
-            <Text style={styles.sectionTitle}>Included services</Text>
-            <View style={styles.featureList}>
-              {featuresList.map((feature, index) => (
-                <View key={`${feature}-${index}`} style={styles.featureRow}>
-                  <Ionicons name="checkmark-circle" size={18} color="#1d9bf0" />
-                  <Text style={styles.featureRowText}>{feature}</Text>
-                </View>
+            <Text style={styles.sectionTitle}>Add-On Services</Text>
+            <View style={styles.addOnsContainer}>
+              {ADD_ONS.map((addon) => (
+                <TouchableOpacity
+                  key={addon.id}
+                  style={styles.addOnRow}
+                  onPress={() => toggleAddOn(addon.id)}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.addOnCheckbox, selectedAddOns[addon.id] && styles.addOnCheckboxSelected]}>
+                    {selectedAddOns[addon.id] && (
+                      <Ionicons name="checkmark" size={16} color="#fff" />
+                    )}
+                  </View>
+                  <View style={styles.addOnInfo}>
+                    <Text style={styles.addOnName}>{addon.name}</Text>
+                  </View>
+                  <Text style={styles.addOnPrice}>{formatCurrency(addon.price)}</Text>
+                </TouchableOpacity>
               ))}
             </View>
-          </View>
-        );
-      case 'gallery':
-        return (
-          <View style={styles.tabSection}>
-            <Text style={styles.sectionTitle}>Gallery</Text>
-            {galleryImages.length ? (
-              <View style={styles.galleryGrid}>
-                {galleryImages.map((image, index) => (
-                  <Image
-                    key={`${image}-${index}`}
-                    source={{ uri: resolveImageUrl(image) }}
-                    style={styles.gallerySquare}
-                    resizeMode="cover"
-                  />
-                ))}
-              </View>
-            ) : (
-              <View style={styles.emptyStateCard}>
-                <Ionicons name="images" size={22} color="#94a3b8" />
-                <Text style={styles.emptyStateText}>Our detailing shots will appear here after your first service.</Text>
-              </View>
-            )}
           </View>
         );
       case 'reviews':
         return (
           <View style={styles.tabSection}>
-            <View style={styles.reviewsHeader}>
-              <View>
-                <Text style={styles.sectionTitle}>Customer reviews</Text>
-                <Text style={styles.sectionSubtitle}>
-                  {totalReviews ? `${totalReviews} review${totalReviews > 1 ? 's' : ''}` : 'No reviews yet'}
-                </Text>
+            <Text style={styles.sectionTitle}>What Our Customers Say</Text>
+            {serviceReviews.length > 0 ? (
+              <View style={styles.reviewsCarouselContainer}>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={styles.reviewsCarousel}
+                  contentContainerStyle={styles.reviewsCarouselContent}
+                  snapToInterval={300}
+                  snapToAlignment="center"
+                  decelerationRate="fast"
+                >
+                  {serviceReviews.slice(0, 10).map((review, index) => (
+                    <Animated.View
+                      key={review._id || index}
+                      style={[
+                        styles.reviewCardAnimated,
+                        {
+                          opacity: fadeAnim,
+                        }
+                      ]}
+                    >
+                      <View style={styles.reviewCardContent}>
+                        <View style={styles.reviewHeader}>
+                          <View style={styles.reviewStarsContainer}>
+                            {renderStars(review.rating || 5)}
+                          </View>
+                          <Text style={styles.reviewDate}>{formatDate(review.createdAt)}</Text>
+                        </View>
+                        <Text style={styles.reviewCustomerName}>{review.customerName || review.userName || 'Anonymous'}</Text>
+                        <Text style={styles.reviewFeedbackText} numberOfLines={4}>{review.feedback || review.comment || review.text}</Text>
+                        <View style={styles.reviewFooter}>
+                          <Ionicons name="checkmark-circle" size={16} color="#10B981" />
+                          <Text style={styles.verifiedText}>Verified Customer</Text>
+                        </View>
+                      </View>
+                    </Animated.View>
+                  ))}
+                </ScrollView>
+                {serviceReviews.length > 1 && (
+                  <View style={styles.reviewPaginationDots}>
+                    {serviceReviews.slice(0, 5).map((_, index) => (
+                      <View
+                        key={index}
+                        style={[
+                          styles.reviewDot,
+                          index === 0 && styles.reviewDotActive,
+                        ]}
+                      />
+                    ))}
+                  </View>
+                )}
               </View>
-              {averageRating && (
-                <View style={styles.ratingBadge}>
-                  <Ionicons name="star" size={16} color="#facc15" />
-                  <Text style={styles.ratingBadgeText}>{averageRating}</Text>
-                </View>
-              )}
-            </View>
-            {reviews.length ? (
-              reviews.map((review) => (
-                <View key={review.id} style={styles.reviewCard}>
-                  <View style={styles.reviewAvatar}>
-                    <Text style={styles.reviewAvatarText}>{review.customerInitials}</Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <View style={styles.reviewHeader}>
-                      <Text style={styles.reviewName}>{review.customerName}</Text>
-                      <Text style={styles.reviewDate}>{formatDate(review.createdAt)}</Text>
-                    </View>
-                    {renderStars(review.rating)}
-                    <Text style={styles.reviewText}>{review.feedback}</Text>
-                  </View>
-                </View>
-              ))
             ) : (
-              <View style={styles.emptyStateCard}>
-                <Ionicons name="chatbubbles-outline" size={22} color="#94a3b8" />
-                <Text style={styles.emptyStateText}>Reviews will appear here once customers submit feedback.</Text>
+              <View style={styles.noReviewsContainer}>
+                <Ionicons name="chatbubble-outline" size={48} color="#D1D5DB" />
+                <Text style={styles.noReviewsText}>No reviews yet</Text>
+                <Text style={styles.noReviewsSubtext}>Be the first to share your experience!</Text>
               </View>
             )}
-            <TouchableOpacity style={styles.feedbackButton} onPress={handleFeedbackPress}>
-              <Ionicons name="chatbubble-ellipses" size={18} color="#fff" />
-              <Text style={styles.feedbackButtonText}>Share your feedback</Text>
-            </TouchableOpacity>
-            <Text style={styles.feedbackHelperText}>Feedback opens on the Home screen once a job is completed.</Text>
           </View>
         );
       case 'about':
       default:
         return (
           <View style={styles.tabSection}>
-            <Text style={styles.sectionTitle}>About the service</Text>
-            <Text style={styles.sectionBody}>
-              {resolvedService.description || 'Premium detailing for a spotless car inside and out.'}
-            </Text>
-            <View style={styles.metaList}>
-              <View style={styles.metaItem}>
-                <Ionicons name="time-outline" size={18} color="#1453b4" />
-                <View>
-                  <Text style={styles.metaLabel}>Duration</Text>
-                  <Text style={styles.metaValue}>{resolvedService.duration || '--'} mins</Text>
+            <Text style={styles.sectionTitle}>About this service</Text>
+            <View style={styles.featureList}>
+              {featuresList.map((feature, index) => (
+                <View key={`${feature}-${index}`} style={styles.featureRow}>
+                  <Ionicons name="checkmark-circle" size={20} color="#1453b4" />
+                  <Text style={styles.featureRowText}>{feature}</Text>
                 </View>
-              </View>
-              <View style={styles.metaItem}>
-                <Ionicons name="calendar-outline" size={18} color="#1453b4" />
-                <View>
-                  <Text style={styles.metaLabel}>Frequency</Text>
-                  <Text style={styles.metaValue}>{formatFrequency(resolvedService.frequency)}</Text>
-                </View>
-              </View>
-              <View style={styles.metaItem}>
-                <Ionicons name="albums-outline" size={18} color="#1453b4" />
-                <View>
-                  <Text style={styles.metaLabel}>Category</Text>
-                  <Text style={styles.metaValue}>{resolvedService.category || 'Premium'}</Text>
-                </View>
-              </View>
+              ))}
             </View>
           </View>
         );
@@ -555,8 +536,9 @@ export default function ServiceDetailScreen({ route, navigation }) {
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
+        showsVerticalScrollIndicator={false}
       >
-        <View style={styles.mediaCard}>
+        <View style={styles.heroSection}>
           <ImageBackground
             source={{ uri: heroImage }}
             style={styles.heroImage}
@@ -565,79 +547,100 @@ export default function ServiceDetailScreen({ route, navigation }) {
             <View style={styles.heroOverlay}>
               <View style={styles.heroBadgeRow}>
                 <View style={styles.heroBadge}>
-                  <Ionicons name="sparkles" size={16} color="#fff" />
-                  <Text style={styles.heroBadgeText}>{formatFrequency(service.frequency)}</Text>
+                  <Ionicons name="time-outline" size={14} color="#fff" />
+                  <Text style={styles.heroBadgeText}>{service.duration || '--'} mins</Text>
                 </View>
                 <View style={styles.heroBadge}>
-                  <Ionicons name="time-outline" size={16} color="#fff" />
-                  <Text style={styles.heroBadgeText}>{service.duration || '--'} mins</Text>
+                  <Ionicons name="repeat" size={14} color="#fff" />
+                  <Text style={styles.heroBadgeText}>{formatFrequency(service.frequency)}</Text>
                 </View>
               </View>
               <Text style={styles.heroTitle}>{service.name}</Text>
-              <Text style={styles.heroSubtitle} numberOfLines={2}>{service.description || 'Complete care for your car inside and out.'}</Text>
+              <Text style={styles.heroSubtitle}>{service.description || 'Complete car care service'}</Text>
             </View>
           </ImageBackground>
         </View>
 
-        <View style={styles.infoCard}>
-          <View style={styles.infoRow}>
-            <View style={styles.priceCopy}>
-              <Text style={styles.sectionLabel}>Plan price</Text>
-              <Text style={styles.priceText}>{formatCurrency(resolvedService.price)}</Text>
-              {pricingMeta?.perWashPrice ? (
-                <Text style={styles.priceSubText}>
-                  {`${formatCurrency(pricingMeta.perWashPrice)} per wash · ${pricingMeta.washesPerCycle || 1} washes / cycle`}
-                </Text>
-              ) : null}
-            </View>
-            <View style={styles.vehicleWrapper}>
-              <View style={styles.vehiclePill}>
-                <Ionicons name="car-sport" size={16} color="#1d4ed8" />
-                <Text style={styles.vehiclePillText} numberOfLines={1}>
-                  {(resolvedService.vehicleType || 'hatchback-sedan').replace('-', ' / ')}
-                </Text>
-              </View>
-            </View>
+        <View style={styles.planPriceCard}>
+          <View style={styles.planPriceContent}>
+            <Text style={styles.planPriceLabel}>PLAN PRICE</Text>
+            <Text style={styles.planPriceAmount}>₹{resolvedService.price}</Text>
+            <Text style={styles.planPriceBreakdown}>₹{Math.round(resolvedService.price / (FREQUENCY_TO_WASHES[resolvedService.frequency] || 1))} per wash · {FREQUENCY_TO_WASHES[resolvedService.frequency] || 1} washes / cycle</Text>
           </View>
+          <TouchableOpacity 
+            style={styles.planPriceChat}
+            onPress={() => {}}
+          >
+            <Ionicons name="chatbubble" size={24} color="#fff" />
+          </TouchableOpacity>
+        </View>
 
-          <View style={styles.overviewGrid}>
-            <View style={styles.overviewItem}>
-              <Ionicons name="calendar-outline" size={18} color="#1453b4" />
-              <Text style={styles.overviewLabel}>Frequency</Text>
-              <Text style={styles.overviewValue}>{formatFrequency(resolvedService.frequency)}</Text>
-            </View>
-            <View style={styles.overviewItem}>
-              <Ionicons name="time-outline" size={18} color="#1453b4" />
-              <Text style={styles.overviewLabel}>Duration</Text>
-              <Text style={styles.overviewValue}>{resolvedService.duration || '--'} mins</Text>
-            </View>
-            <View style={styles.overviewItem}>
-              <Ionicons name="albums-outline" size={18} color="#1453b4" />
-              <Text style={styles.overviewLabel}>Category</Text>
-              <Text style={styles.overviewValue}>{resolvedService.category || 'Premium'}</Text>
-            </View>
+        <View style={styles.premiumLineSection}>
+          <View style={styles.premiumLineIcon}>
+            <Ionicons name="sparkles" size={20} color="#1453b4" />
+          </View>
+          <Text style={styles.premiumLine}>Professional car care service designed to keep your vehicle spotless and well-maintained</Text>
+        </View>
+
+        <View style={styles.keyInfoCardsSection}>
+          <View style={styles.keyInfoCard}>
+            <Ionicons name="calendar-outline" size={20} color="#1453b4" />
+            <Text style={styles.keyInfoCardLabel}>Frequency</Text>
+            <Text style={styles.keyInfoCardValue}>{formatFrequency(resolvedService.frequency)}</Text>
+          </View>
+          <View style={styles.keyInfoCard}>
+            <Ionicons name="time-outline" size={20} color="#1453b4" />
+            <Text style={styles.keyInfoCardLabel}>Duration</Text>
+            <Text style={styles.keyInfoCardValue}>{resolvedService.duration || '--'} mins</Text>
+          </View>
+          <View style={styles.keyInfoCard}>
+            <Ionicons name="albums-outline" size={20} color="#1453b4" />
+            <Text style={styles.keyInfoCardLabel}>Category</Text>
+            <Text style={styles.keyInfoCardValue}>{resolvedService.category || 'basic'}</Text>
           </View>
         </View>
 
-        <View style={styles.quickActionsCard}>
-          <View style={styles.quickActionsRow}>
-            {quickActions.map((action) => (
-              <TouchableOpacity key={action.key} style={styles.quickAction} onPress={action.onPress}>
-                <View style={styles.quickIconWrapper}>
-                  <Ionicons name={action.icon} size={18} color="#1d4ed8" />
-                </View>
-                <Text style={styles.quickLabel} numberOfLines={1}>{action.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+        <View style={styles.contactSection}>
+          <TouchableOpacity 
+            style={styles.contactButton}
+            onPress={() => Linking.openURL(`tel:${SUPPORT_NUMBER}`)}
+          >
+            <Ionicons name="call" size={20} color="#1453b4" />
+            <Text style={styles.contactButtonText}>Call</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.contactButton}
+            onPress={() => Linking.openURL(`https://wa.me/${SUPPORT_NUMBER.replace(/\D/g, '')}`)}
+          >
+            <Ionicons name="logo-whatsapp" size={20} color="#1453b4" />
+            <Text style={styles.contactButtonText}>WhatsApp</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.contactButton}
+            onPress={() => Linking.openURL(WEBSITE_URL)}
+          >
+            <Ionicons name="globe" size={20} color="#1453b4" />
+            <Text style={styles.contactButtonText}>Website</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.contactButton}
+            onPress={() => Linking.openURL(MAPS_URL)}
+          >
+            <Ionicons name="location" size={20} color="#1453b4" />
+            <Text style={styles.contactButtonText}>Direction</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.contactButton}
+            onPress={() => Share.share({
+              message: `Check out ${service.name} on CarsTuneUp!`,
+              url: WEBSITE_URL,
+              title: service.name
+            })}
+          >
+            <Ionicons name="share-social" size={20} color="#1453b4" />
+            <Text style={styles.contactButtonText}>Share</Text>
+          </TouchableOpacity>
         </View>
-
-        {overviewError ? (
-          <View style={styles.errorBanner}>
-            <Ionicons name="warning" size={16} color="#b45309" />
-            <Text style={styles.errorText}>{overviewError}</Text>
-          </View>
-        ) : null}
 
         <View style={styles.tabsContainer}>
           <View style={styles.tabsRow}>
@@ -647,11 +650,6 @@ export default function ServiceDetailScreen({ route, navigation }) {
                 style={[styles.tabPill, activeTab === tab.key && styles.tabPillActive]}
                 onPress={() => animateTabSwap(tab.key)}
               >
-                <Ionicons
-                  name={tab.icon}
-                  size={16}
-                  color={activeTab === tab.key ? '#fff' : '#475569'}
-                />
                 <Text
                   style={[styles.tabPillText, activeTab === tab.key && styles.tabPillTextActive]}
                   numberOfLines={1}
@@ -677,135 +675,121 @@ export default function ServiceDetailScreen({ route, navigation }) {
           </Animated.View>
         </View>
 
-        <View style={styles.inclusionCard}>
-          <View style={styles.inclusionHeader}>
-            <Text style={styles.sectionTitle}>Included vs Excluded</Text>
-            <TouchableOpacity onPress={() => setShowAllModal(true)}>
-              <Text style={styles.seeAllLink}>See all</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={styles.inclusionToggleRow}>
-            {['included', 'excluded'].map((type) => (
-              <TouchableOpacity
-                key={type}
-                style={[styles.inclusionToggleBtn, inclusionFilter === type && styles.inclusionToggleActive]}
-                onPress={() => animateInclusionSwap(type)}
-              >
-                <Text style={[styles.inclusionToggleText, inclusionFilter === type && styles.inclusionToggleTextActive]}>
-                  {type === 'included' ? 'Included items' : 'Excluded items'}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-          <Animated.View style={{ transform: [{ scale: inclusionAnim }] }}>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.inclusionScroll}
-            >
-              {(inclusionFilter === 'included' ? INCLUDED_ITEMS : EXCLUDED_ITEMS).map((item) => (
-                <View key={item.id} style={styles.inclusionCardItem}>
-                  <Image source={getCardImageSource(item.image)} style={styles.inclusionImage} />
-                  <View style={styles.inclusionOverlay}>
-                    <Text style={styles.inclusionTitle}>{item.title}</Text>
-                    <Text style={styles.inclusionDesc} numberOfLines={2}>{item.description}</Text>
-                  </View>
-                </View>
-              ))}
-            </ScrollView>
-          </Animated.View>
-        </View>
-
-        <View style={styles.noteCard}>
-          <Ionicons name="information-circle" size={24} color="#1453b4" />
-          <View style={{ flex: 1 }}>
-            <Text style={styles.noteTitle}>Need a specific schedule?</Text>
-            <Text style={styles.noteText}>Our team will confirm your preferred day & time after you subscribe.</Text>
-          </View>
-        </View>
-
-        <View style={{ height: 120 }} />
+        <View style={{ height: 100 }} />
       </ScrollView>
 
       <View style={styles.footer}>
-        {/* Date Picker Section */}
-        <View style={styles.datePickerSection}>
-          <View style={styles.datePickerHeader}>
-            <Ionicons name="calendar-outline" size={20} color="#1453b4" />
-            <Text style={styles.datePickerLabel}>Start Date</Text>
+        {Object.keys(selectedAddOns).length > 0 && (
+          <View style={styles.totalAmountSection}>
+            <Text style={styles.totalAmountLabel}>Service + Add-ons</Text>
+            <Text style={styles.totalAmountValue}>
+              {formatCurrency(
+                resolvedService.price + 
+                Object.keys(selectedAddOns).reduce((sum, addonId) => {
+                  const addon = ADD_ONS.find(a => a.id === addonId);
+                  return sum + (addon?.price || 0);
+                }, 0)
+              )}
+            </Text>
           </View>
-          <TouchableOpacity 
-            style={styles.datePickerButton} 
-            onPress={showDatePickerModal}
+        )}
+        <View style={styles.addToCartButtonContainer}>
+          <TouchableOpacity
+            style={styles.addToCartButton}
+            onPress={handleAddToCart}
+            activeOpacity={0.9}
           >
-            <Text style={styles.datePickerText}>{formatDate(selectedStartDate)}</Text>
-            <Ionicons name="chevron-down" size={16} color="#666" />
+            <Text style={styles.addToCartButtonText}>Add to Cart</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.addOnsIconButton}
+            onPress={() => {
+              Alert.alert(
+                'Add Add-ons',
+                'Select add-ons to enhance your service',
+                [
+                  {
+                    text: 'Cancel',
+                    onPress: () => {},
+                    style: 'cancel'
+                  },
+                  {
+                    text: 'Browse Add-ons',
+                    onPress: () => setShowAddOnsModal(true),
+                    style: 'default'
+                  }
+                ]
+              );
+            }}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="add" size={24} color="#fff" />
           </TouchableOpacity>
         </View>
-
-        <TouchableOpacity
-          style={[styles.subscribeButton, loading && styles.subscribeButtonDisabled]}
-          onPress={handleSubscribe}
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.subscribeButtonText}>Subscribe Now</Text>
-          )}
-        </TouchableOpacity>
       </View>
 
-      {/* Date Picker */}
-      {showDatePicker && (
-        <DateTimePicker
-          value={selectedStartDate}
-          mode={datePickerMode}
-          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-          onChange={handleDateChange}
-          minimumDate={new Date()}
-          style={styles.dateTimePicker}
-        />
-      )}
-
       <Modal
-        visible={showAllModal}
+        visible={showAddOnsModal}
         transparent
         animationType="slide"
-        onRequestClose={() => setShowAllModal(false)}
+        onRequestClose={() => setShowAddOnsModal(false)}
       >
         <View style={styles.modalBackdrop}>
-          <TouchableOpacity style={styles.modalBackdropSpacer} onPress={() => setShowAllModal(false)} />
-          <View style={styles.modalSheet}>
+          <TouchableOpacity
+            style={styles.modalBackdropSpacer}
+            onPress={() => setShowAddOnsModal(false)}
+            activeOpacity={1}
+          />
+          <View style={styles.addOnsModalSheet}>
             <View style={styles.modalHandle} />
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Full breakdown</Text>
-              <TouchableOpacity onPress={() => setShowAllModal(false)}>
-                <Ionicons name="close" size={22} color="#0f172a" />
+              <Text style={styles.modalTitle}>Enhance Your Service</Text>
+              <TouchableOpacity onPress={() => setShowAddOnsModal(false)}>
+                <Ionicons name="close" size={24} color="#1F2937" />
               </TouchableOpacity>
             </View>
-            <ScrollView contentContainerStyle={styles.modalList}>
-              <Text style={styles.modalSectionHeading}>Included</Text>
-              {INCLUDED_ITEMS.map((item) => (
-                <View key={`modal-${item.id}`} style={styles.modalRow}>
-                  <Image source={getCardImageSource(item.image)} style={styles.modalRowImage} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.modalRowTitle}>{item.title}</Text>
-                    <Text style={styles.modalRowDesc}>{item.description}</Text>
+
+            <ScrollView
+              style={styles.addOnsModalContent}
+              showsVerticalScrollIndicator={false}
+            >
+              {ADD_ONS.map((addon) => (
+                <TouchableOpacity
+                  key={addon.id}
+                  style={[
+                    styles.modalAddOnRow,
+                    selectedAddOns[addon.id] && styles.modalAddOnRowSelected
+                  ]}
+                  onPress={() => toggleAddOn(addon.id)}
+                  activeOpacity={0.7}
+                >
+                  <View
+                    style={[
+                      styles.modalCheckbox,
+                      selectedAddOns[addon.id] && styles.modalCheckboxSelected
+                    ]}
+                  >
+                    {selectedAddOns[addon.id] && (
+                      <Ionicons name="checkmark" size={16} color="#fff" />
+                    )}
                   </View>
-                </View>
-              ))}
-              <Text style={[styles.modalSectionHeading, { marginTop: 12 }]}>Excluded</Text>
-              {EXCLUDED_ITEMS.map((item) => (
-                <View key={`modal-ex-${item.id}`} style={styles.modalRow}>
-                  <Image source={getCardImageSource(item.image)} style={styles.modalRowImage} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.modalRowTitle}>{item.title}</Text>
-                    <Text style={styles.modalRowDesc}>{item.description}</Text>
+                  <View style={styles.modalAddOnInfo}>
+                    <Text style={styles.modalAddOnName}>{addon.name}</Text>
                   </View>
-                </View>
+                  <Text style={styles.modalAddOnPrice}>{formatCurrency(addon.price)}</Text>
+                </TouchableOpacity>
               ))}
             </ScrollView>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={styles.applyAddOnsButton}
+                onPress={() => setShowAddOnsModal(false)}
+                activeOpacity={0.9}
+              >
+                <Text style={styles.applyAddOnsButtonText}>Apply Add-Ons</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -816,7 +800,7 @@ export default function ServiceDetailScreen({ route, navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#FFFFFF',
   },
   header: {
     backgroundColor: '#fff',
@@ -826,7 +810,7 @@ const styles = StyleSheet.create({
     padding: 15,
     paddingTop: 50,
     borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
+    borderBottomColor: '#E5E7EB',
   },
   backButton: {
     padding: 5,
@@ -834,28 +818,28 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#333',
+    color: '#1F2937',
   },
   content: {
     flex: 1,
   },
-  mediaCard: {
+  heroSection: {
     backgroundColor: '#fff',
-    marginBottom: 16,
+    marginBottom: 0,
   },
   heroImage: {
     height: 240,
     width: '100%',
   },
   heroImageRadius: {
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
   },
   heroOverlay: {
     flex: 1,
     padding: 24,
     justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0,0,0,0.35)',
+    backgroundColor: 'rgba(0,0,0,0.3)',
   },
   heroBadgeRow: {
     flexDirection: 'row',
@@ -866,14 +850,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
     borderRadius: 20,
   },
   heroBadgeText: {
-    color: '#fff',
-    fontWeight: '600',
+    color: '#E5E7EB',
+    fontSize: 14,
+    lineHeight: 20,
   },
   heroTitle: {
     fontSize: 28,
@@ -886,202 +871,282 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
   },
-  infoCard: {
-    backgroundColor: '#fff',
-    padding: 20,
-    marginBottom: 16,
-    borderRadius: 16,
-    marginHorizontal: 16,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 2,
+  premiumLineSection: {
+    backgroundColor: '#EFF6FF',
+    marginHorizontal: 20,
+    marginVertical: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
   },
-  infoRow: {
+  premiumLineIcon: {
+    marginTop: 2,
+  },
+  premiumLine: {
+    fontSize: 14,
+    color: '#1453b4',
+    lineHeight: 21,
+    fontWeight: '600',
+    flex: 1,
+  },
+  planPriceCard: {
+    backgroundColor: '#fff',
+    marginHorizontal: 20,
+    marginVertical: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 20,
+    borderRadius: 16,
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 20,
-    gap: 12,
-    flexWrap: 'wrap',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
-  priceCopy: {
+  planPriceContent: {
     flex: 1,
-    paddingRight: 8,
-    minWidth: '55%',
   },
-  vehicleWrapper: {
-    flexShrink: 0,
-    minWidth: 130,
-    maxWidth: '42%',
-    alignItems: 'flex-end',
+  planPriceLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#9CA3AF',
+    letterSpacing: 0.5,
+    marginBottom: 8,
   },
-  sectionLabel: {
+  planPriceAmount: {
+    fontSize: 32,
+    fontWeight: '700',
+    color: '#1453b4',
+    marginBottom: 8,
+  },
+  planPriceBreakdown: {
+    fontSize: 13,
+    color: '#6B7280',
+    fontWeight: '500',
+  },
+  planPriceChat: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#1453b4',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 16,
+    shadowColor: '#1453b4',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  keyInfoCardsSection: {
+    backgroundColor: '#fff',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F9FAFB',
+    flexDirection: 'row',
+    gap: 12,
+  },
+  keyInfoCard: {
+    flex: 1,
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 12,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  keyInfoCardLabel: {
     fontSize: 12,
     color: '#6B7280',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
+    marginTop: 8,
+    fontWeight: '500',
   },
-  priceText: {
-    fontSize: 30,
-    fontWeight: '700',
-    color: '#0f172a',
-  },
-  priceSubText: {
-    marginTop: 4,
-    color: '#0f172a',
+  keyInfoCardValue: {
     fontSize: 14,
     fontWeight: '700',
-  },
-  vehiclePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#eff6ff',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    alignSelf: 'flex-end',
-    maxWidth: '100%',
-  },
-  vehiclePillText: {
-    color: '#1d4ed8',
-    fontWeight: '600',
-    textTransform: 'capitalize',
-    flexShrink: 1,
-  },
-  overviewGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    rowGap: 12,
-  },
-  overviewItem: {
-    flexBasis: '32%',
-    minWidth: 100,
-    backgroundColor: '#e8f2ff',
-    padding: 14,
-    borderRadius: 16,
-    gap: 6,
-    borderWidth: 1,
-    borderColor: '#c7ddff',
-  },
-  overviewLabel: {
-    fontSize: 13,
-    color: '#1d4ed8',
-    letterSpacing: 0,
-    fontWeight: '600',
-  },
-  overviewValue: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#0f172a',
-  },
-  quickActionsCard: {
-    backgroundColor: '#fff',
-    marginHorizontal: 16,
-    borderRadius: 18,
-    paddingVertical: 16,
-    paddingHorizontal: 8,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOpacity: 0.04,
-    shadowRadius: 10,
-    elevation: 1,
-  },
-  quickActionsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
-  },
-  quickAction: {
-    alignItems: 'center',
-    gap: 6,
-    flex: 1,
-    paddingHorizontal: 4,
-  },
-  quickIconWrapper: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: '#eff6ff',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 4,
-  },
-  quickLabel: {
-    fontSize: 12,
-    color: '#0f172a',
-    fontWeight: '600',
+    color: '#1F2937',
+    marginTop: 4,
     textAlign: 'center',
   },
-  errorBanner: {
-    backgroundColor: '#fef3c7',
-    borderRadius: 12,
-    padding: 12,
-    marginHorizontal: 16,
+  keyInfoSection: {
+    backgroundColor: '#fff',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F9FAFB',
+    gap: 16,
+  },
+  keyInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  keyInfoContent: {
+    flex: 1,
+  },
+  keyInfoLabel: {
+    fontSize: 11,
+    color: '#9CA3AF',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  keyInfoValue: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1F2937',
+    marginTop: 2,
+  },
+  vehicleAndInfoSection: {
+    backgroundColor: '#fff',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F9FAFB',
+  },
+  vehiclePillSection: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#EFF6FF',
+    borderRadius: 20,
+    alignSelf: 'flex-start',
+    marginBottom: 16,
   },
-  errorText: {
-    color: '#92400e',
-    fontSize: 13,
+  vehiclePillText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1453b4',
+  },
+  infoCardsRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  infoCard: {
     flex: 1,
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 12,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  infoCardLabel: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 8,
+    fontWeight: '500',
+  },
+  infoCardValue: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1F2937',
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  washesSection: {
+    backgroundColor: '#fff',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F9FAFB',
+    borderTopWidth: 1,
+    borderTopColor: '#F9FAFB',
+    borderLeftWidth: 3,
+    borderLeftColor: '#1453b4',
+  },
+  washesContent: {
+    paddingVertical: 8,
+  },
+  washesCount: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1F2937',
+    marginBottom: 4,
+  },
+  washesSubtext: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginBottom: 2,
+  },
+  contactSection: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  contactButton: {
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  contactButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#1F2937',
   },
   tabsContainer: {
     backgroundColor: '#fff',
-    marginHorizontal: 16,
-    borderRadius: 18,
-    padding: 18,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOpacity: 0.04,
-    shadowRadius: 10,
-    elevation: 1,
+    marginHorizontal: 0,
+    borderRadius: 0,
+    padding: 20,
+    marginBottom: 0,
+    shadowColor: 'transparent',
+    elevation: 0,
   },
   tabsRow: {
     flexDirection: 'row',
-    gap: 10,
-    marginBottom: 16,
-    paddingHorizontal: 4,
+    gap: 12,
+    marginBottom: 20,
+    paddingHorizontal: 0,
   },
   tabPill: {
     flex: 1,
-    borderRadius: 999,
-    backgroundColor: '#f1f5f9',
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+    borderRadius: 0,
+    backgroundColor: 'transparent',
+    paddingVertical: 12,
+    paddingHorizontal: 0,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    borderWidth: 1,
+    borderWidth: 0,
     borderColor: 'transparent',
+    borderBottomWidth: 2,
+    borderBottomColor: '#E5E7EB',
   },
   tabPillActive: {
-    backgroundColor: '#1453b4',
-    borderColor: '#0f3f87',
+    backgroundColor: 'transparent',
+    borderBottomColor: '#1453b4',
   },
   tabPillText: {
-    color: '#475569',
+    color: '#4B5563',
     fontWeight: '600',
-    fontSize: 13,
+    fontSize: 14,
   },
   tabPillTextActive: {
-    color: '#fff',
+    color: '#1453b4',
   },
   tabContentWrapper: {
-    minHeight: 180,
+    minHeight: 200,
   },
   tabSection: {
-    gap: 12,
+    gap: 16,
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#0f172a',
+    fontWeight: '700',
+    color: '#1F2937',
   },
   sectionSubtitle: {
     fontSize: 13,
@@ -1113,20 +1178,207 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   featureList: {
-    gap: 10,
+    gap: 14,
   },
   featureRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingVertical: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
+    alignItems: 'flex-start',
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 8,
+    marginBottom: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: '#1453b4',
   },
   featureRowText: {
     fontSize: 15,
-    color: '#0f172a',
+    color: '#1F2937',
     flex: 1,
+    lineHeight: 22,
+    fontWeight: '500',
+  },
+  addOnsContainer: {
+    gap: 12,
+  },
+  addOnRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 10,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  addOnCheckbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: '#D1D5DB',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#fff',
+  },
+  addOnCheckboxSelected: {
+    backgroundColor: '#1453b4',
+    borderColor: '#1453b4',
+    shadowColor: '#1453b4',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  addOnInfo: {
+    flex: 1,
+  },
+  addOnName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1F2937',
+  },
+  addOnPrice: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1453b4',
+  },
+  reviewsList: {
+    gap: 16,
+  },
+  reviewCardNew: {
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  reviewStars: {
+    marginBottom: 8,
+  },
+  reviewNameNew: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1F2937',
+    marginBottom: 6,
+  },
+  reviewFeedback: {
+    fontSize: 14,
+    color: '#4B5563',
+    lineHeight: 20,
+    marginBottom: 8,
+  },
+  reviewDateNew: {
+    fontSize: 12,
+    color: '#9CA3AF',
+  },
+  starsRow: {
+    flexDirection: 'row',
+    gap: 4,
+  },
+  seeAllReviewsButton: {
+    marginTop: 16,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  seeAllReviewsText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1453b4',
+  },
+  reviewsCarouselContainer: {
+    marginTop: 16,
+  },
+  reviewsCarousel: {
+    flexGrow: 0,
+  },
+  reviewsCarouselContent: {
+    paddingHorizontal: 0,
+    gap: 12,
+  },
+  reviewCardAnimated: {
+    width: 300,
+    marginHorizontal: 6,
+  },
+  reviewCardContent: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    padding: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: '#1453b4',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  reviewHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  reviewStarsContainer: {
+    flexDirection: 'row',
+    gap: 2,
+  },
+  reviewDate: {
+    fontSize: 12,
+    color: '#9CA3AF',
+  },
+  reviewCustomerName: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1F2937',
+    marginBottom: 8,
+  },
+  reviewFeedbackText: {
+    fontSize: 14,
+    color: '#4B5563',
+    lineHeight: 20,
+    marginBottom: 12,
+  },
+  reviewFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  verifiedText: {
+    fontSize: 12,
+    color: '#10B981',
+    fontWeight: '600',
+  },
+  reviewPaginationDots: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 16,
+  },
+  reviewDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#D1D5DB',
+  },
+  reviewDotActive: {
+    backgroundColor: '#1453b4',
+    width: 24,
+  },
+  noReviewsContainer: {
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  noReviewsText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1F2937',
+    marginTop: 12,
+  },
+  noReviewsSubtext: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginTop: 4,
   },
   galleryGrid: {
     flexDirection: 'row',
@@ -1327,89 +1579,189 @@ const styles = StyleSheet.create({
     color: '#4B5563',
     fontSize: 13,
   },
+  priceSummaryCard: {
+    backgroundColor: '#fff',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  summaryLabel: {
+    fontSize: 14,
+    color: '#4B5563',
+  },
+  summaryValue: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1F2937',
+  },
+  summaryDivider: {
+    height: 1,
+    backgroundColor: '#E5E7EB',
+    marginVertical: 12,
+  },
+  summaryTotal: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1453b4',
+  },
   footer: {
     backgroundColor: '#fff',
-    padding: 15,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
     borderTopWidth: 1,
-    borderTopColor: '#e0e0e0',
+    borderTopColor: '#E5E7EB',
   },
-  subscribeButton: {
-    backgroundColor: '#1453b4',
-    paddingVertical: 15,
-    borderRadius: 10,
+  totalAmountSection: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
+    backgroundColor: '#F9FAFB',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginBottom: 12,
   },
-  subscribeButtonDisabled: {
-    opacity: 0.6,
+  totalAmountLabel: {
+    fontSize: 13,
+    color: '#6B7280',
+    fontWeight: '500',
   },
-  subscribeButtonText: {
+  totalAmountValue: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1453b4',
+  },
+  addToCartButtonContainer: {
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'center',
+    height: 56,
+  },
+  addToCartButton: {
+    flex: 1,
+    backgroundColor: '#1453b4',
+    height: 56,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addToCartButtonText: {
     color: '#fff',
-    fontSize: 18,
-    fontWeight: '600',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  addOnsIconButton: {
+    backgroundColor: '#1453b4',
+    width: 56,
+    height: 56,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(15,23,42,0.5)',
+    backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'flex-end',
   },
   modalBackdropSpacer: {
     flex: 1,
   },
-  modalSheet: {
+  addOnsModalSheet: {
     backgroundColor: '#fff',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    paddingBottom: 24,
     maxHeight: '70%',
+    paddingBottom: 24,
   },
   modalHandle: {
     alignSelf: 'center',
     width: 48,
     height: 4,
-    borderRadius: 999,
-    backgroundColor: '#e2e8f0',
+    borderRadius: 2,
+    backgroundColor: '#E5E7EB',
     marginTop: 8,
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
     paddingVertical: 16,
   },
   modalTitle: {
     fontSize: 18,
+    fontWeight: '700',
+    color: '#1F2937',
+  },
+  addOnsModalContent: {
+    paddingHorizontal: 20,
+    maxHeight: 300,
+  },
+  modalAddOnRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    marginBottom: 10,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 10,
+  },
+  modalAddOnRowSelected: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#1453b4',
+  },
+  modalCheckbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: '#E5E7EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalCheckboxSelected: {
+    backgroundColor: '#1453b4',
+    borderColor: '#1453b4',
+  },
+  modalAddOnInfo: {
+    flex: 1,
+  },
+  modalAddOnName: {
+    fontSize: 15,
     fontWeight: '600',
-    color: '#0f172a',
+    color: '#1F2937',
   },
-  modalList: {
-    paddingHorizontal: 24,
-    paddingBottom: 24,
+  modalAddOnPrice: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1453b4',
   },
-  modalSectionHeading: {
+  modalFooter: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+  },
+  applyAddOnsButton: {
+    backgroundColor: '#1453b4',
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  applyAddOnsButtonText: {
+    color: '#fff',
     fontSize: 16,
     fontWeight: '700',
-    color: '#0f172a',
-    marginBottom: 10,
-  },
-  modalRow: {
-    flexDirection: 'row',
-    gap: 14,
-    marginBottom: 16,
-  },
-  modalRowImage: {
-    width: 64,
-    height: 64,
-    borderRadius: 16,
-  },
-  modalRowTitle: {
-    fontWeight: '600',
-    color: '#0f172a',
-  },
-  modalRowDesc: {
-    color: '#475569',
-    fontSize: 13,
-    marginTop: 4,
   },
   // Date Picker Styles
   datePickerSection: {

@@ -9,22 +9,49 @@ import {
   Alert,
   Image,
   Modal,
+  Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../config/api';
 
 function SubscriptionDetailScreen({ route, navigation }) {
-  const { subscriptionId } = route.params;
+  const { subscriptionId, openJobId } = route.params;
   const [subscription, setSubscription] = useState(null);
   const [loading, setLoading] = useState(true);
   const [jobs, setJobs] = useState([]);
   const [showPhotoModal, setShowPhotoModal] = useState(false);
   const [selectedJob, setSelectedJob] = useState(null);
+  const [beforeIndex, setBeforeIndex] = useState(0);
+  const [afterIndex, setAfterIndex] = useState(0);
+
+  const SCREEN_WIDTH = Dimensions.get('window').width;
+
+  const buildPhotoUrl = (photo) => {
+    if (!photo || typeof photo !== 'string') return null;
+    if (photo.startsWith('http://') || photo.startsWith('https://')) return photo;
+
+    const base = typeof api?.defaults?.baseURL === 'string' ? api.defaults.baseURL : '';
+    const origin = base.endsWith('/api') ? base.slice(0, -4) : base;
+    if (!origin) return photo;
+
+    if (photo.startsWith('/')) return `${origin}${photo}`;
+    return `${origin}/${photo}`;
+  };
 
   useEffect(() => {
     fetchSubscriptionDetails();
     fetchJobHistory();
   }, [subscriptionId]);
+
+  useEffect(() => {
+    if (!openJobId) return;
+    if (!jobs || jobs.length === 0) return;
+
+    const job = jobs.find((j) => j?._id === openJobId);
+    if (job) {
+      openPhotoModal(job);
+    }
+  }, [openJobId, jobs]);
 
   const fetchSubscriptionDetails = async () => {
     try {
@@ -54,6 +81,8 @@ function SubscriptionDetailScreen({ route, navigation }) {
   const openPhotoModal = (job) => {
     setSelectedJob(job);
     setShowPhotoModal(true);
+    setBeforeIndex(0);
+    setAfterIndex(0);
   };
 
   const getStatusColor = (status) => {
@@ -258,15 +287,15 @@ function SubscriptionDetailScreen({ route, navigation }) {
           </View>
         </View>
 
-        {/* Job History with Photos */}
+        {/* Service Scheduled Details */}
         {jobs.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Service History</Text>
+            <Text style={styles.sectionTitle}>Service Scheduled Details</Text>
             
             {jobs.map((job, index) => (
               <View key={job._id} style={styles.jobCard}>
                 <View style={styles.jobHeader}>
-                  <View>
+                  <View style={styles.jobHeaderLeft}>
                     <Text style={styles.jobDate}>
                       {formatDate(job.scheduledDate)}
                     </Text>
@@ -282,6 +311,21 @@ function SubscriptionDetailScreen({ route, navigation }) {
                     </Text>
                   </View>
                 </View>
+
+                {/* Assigned Employee Information - Use subscription's assigned employee */}
+                {subscription?.assignedEmployee?.userId && (
+                  <View style={styles.assignedEmployeeSection}>
+                    <View style={styles.employeeInfoRow}>
+                      <Ionicons name="person-circle-outline" size={20} color="#28a745" />
+                      <View style={styles.employeeDetails}>
+                        <Text style={styles.employeeLabel}>Assigned Employee</Text>
+                        <Text style={styles.employeeNameBold}>
+                          {subscription.assignedEmployee.userId.name}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                )}
                 
                 {(job.beforePhotos?.length > 0 || job.afterPhotos?.length > 0) && (
                   <TouchableOpacity 
@@ -291,19 +335,43 @@ function SubscriptionDetailScreen({ route, navigation }) {
                     <View style={styles.photoPreviewRow}>
                       {job.beforePhotos?.length > 0 && (
                         <View style={styles.photoPreviewItem}>
-                          <Image 
-                            source={{ uri: `http://192.168.1.125:5000${job.beforePhotos[0]}` }} 
-                            style={styles.photoPreview} 
-                          />
+                          <ScrollView
+                            horizontal
+                            pagingEnabled
+                            showsHorizontalScrollIndicator={false}
+                            style={{ width: styles.photoPreview.width }}
+                            snapToInterval={styles.photoPreview.width}
+                            decelerationRate="fast"
+                          >
+                            {job.beforePhotos.map((photo, index) => (
+                              <Image
+                                key={`preview-before-${job._id}-${index}`}
+                                source={{ uri: buildPhotoUrl(photo) }}
+                                style={styles.photoPreview}
+                              />
+                            ))}
+                          </ScrollView>
                           <Text style={styles.photoPreviewLabel}>Before</Text>
                         </View>
                       )}
                       {job.afterPhotos?.length > 0 && (
                         <View style={styles.photoPreviewItem}>
-                          <Image 
-                            source={{ uri: `http://192.168.1.125:5000${job.afterPhotos[0]}` }} 
-                            style={styles.photoPreview} 
-                          />
+                          <ScrollView
+                            horizontal
+                            pagingEnabled
+                            showsHorizontalScrollIndicator={false}
+                            style={{ width: styles.photoPreview.width }}
+                            snapToInterval={styles.photoPreview.width}
+                            decelerationRate="fast"
+                          >
+                            {job.afterPhotos.map((photo, index) => (
+                              <Image
+                                key={`preview-after-${job._id}-${index}`}
+                                source={{ uri: buildPhotoUrl(photo) }}
+                                style={styles.photoPreview}
+                              />
+                            ))}
+                          </ScrollView>
                           <Text style={styles.photoPreviewLabel}>After</Text>
                         </View>
                       )}
@@ -313,15 +381,6 @@ function SubscriptionDetailScreen({ route, navigation }) {
                       <Text style={styles.viewPhotosText}>View Details</Text>
                     </View>
                   </TouchableOpacity>
-                )}
-                
-                {job.employeeId?.userId && (
-                  <View style={styles.employeeInfo}>
-                    <Ionicons name="person-outline" size={16} color="#666" />
-                    <Text style={styles.employeeName}>
-                      {job.employeeId.userId.name}
-                    </Text>
-                  </View>
                 )}
               </View>
             ))}
@@ -353,30 +412,56 @@ function SubscriptionDetailScreen({ route, navigation }) {
                 {selectedJob.beforePhotos?.length > 0 && (
                   <View style={styles.photoSection}>
                     <Text style={styles.photoSectionTitle}>Before Photos</Text>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                    <ScrollView
+                      horizontal
+                      pagingEnabled
+                      showsHorizontalScrollIndicator={false}
+                      snapToInterval={SCREEN_WIDTH - 48}
+                      decelerationRate="fast"
+                      onMomentumScrollEnd={(e) => {
+                        const idx = Math.round(e.nativeEvent.contentOffset.x / (SCREEN_WIDTH - 48));
+                        setBeforeIndex(idx);
+                      }}
+                    >
                       {selectedJob.beforePhotos.map((photo, index) => (
-                        <Image 
-                          key={`before-${index}`} 
-                          source={{ uri: `http://192.168.1.125:5000${photo}` }} 
-                          style={styles.modalPhoto} 
+                        <Image
+                          key={`before-${index}`}
+                          source={{ uri: buildPhotoUrl(photo) }}
+                          style={[styles.modalPhoto, { width: SCREEN_WIDTH - 48, marginRight: 0 }]}
                         />
                       ))}
                     </ScrollView>
+                    <Text style={styles.photoPagerText}>
+                      {Math.min(beforeIndex + 1, selectedJob.beforePhotos.length)} / {selectedJob.beforePhotos.length}
+                    </Text>
                   </View>
                 )}
                 
                 {selectedJob.afterPhotos?.length > 0 && (
                   <View style={styles.photoSection}>
                     <Text style={styles.photoSectionTitle}>After Photos</Text>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                    <ScrollView
+                      horizontal
+                      pagingEnabled
+                      showsHorizontalScrollIndicator={false}
+                      snapToInterval={SCREEN_WIDTH - 48}
+                      decelerationRate="fast"
+                      onMomentumScrollEnd={(e) => {
+                        const idx = Math.round(e.nativeEvent.contentOffset.x / (SCREEN_WIDTH - 48));
+                        setAfterIndex(idx);
+                      }}
+                    >
                       {selectedJob.afterPhotos.map((photo, index) => (
-                        <Image 
-                          key={`after-${index}`} 
-                          source={{ uri: `http://192.168.1.125:5000${photo}` }} 
-                          style={styles.modalPhoto} 
+                        <Image
+                          key={`after-${index}`}
+                          source={{ uri: buildPhotoUrl(photo) }}
+                          style={[styles.modalPhoto, { width: SCREEN_WIDTH - 48, marginRight: 0 }]}
                         />
                       ))}
                     </ScrollView>
+                    <Text style={styles.photoPagerText}>
+                      {Math.min(afterIndex + 1, selectedJob.afterPhotos.length)} / {selectedJob.afterPhotos.length}
+                    </Text>
                   </View>
                 )}
                 
@@ -524,6 +609,9 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     marginBottom: 12,
   },
+  jobHeaderLeft: {
+    flex: 1,
+  },
   jobDate: {
     fontSize: 14,
     color: '#666',
@@ -543,6 +631,32 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 10,
     fontWeight: 'bold',
+  },
+  assignedEmployeeSection: {
+    backgroundColor: '#f0f8f0',
+    borderLeftWidth: 4,
+    borderLeftColor: '#28a745',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  employeeInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  employeeDetails: {
+    marginLeft: 12,
+    flex: 1,
+  },
+  employeeLabel: {
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 2,
+  },
+  employeeNameBold: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#28a745',
   },
   photoPreviewContainer: {
     marginTop: 8,
@@ -578,16 +692,6 @@ const styles = StyleSheet.create({
     color: '#1453b4',
     marginLeft: 4,
     fontWeight: '500',
-  },
-  employeeInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  employeeName: {
-    fontSize: 12,
-    color: '#666',
-    marginLeft: 4,
   },
   modalOverlay: {
     flex: 1,
@@ -635,9 +739,16 @@ const styles = StyleSheet.create({
   },
   modalPhoto: {
     width: 200,
-    height: 150,
+    height: 220,
     borderRadius: 8,
     marginRight: 12,
+  },
+  photoPagerText: {
+    marginTop: 8,
+    fontSize: 12,
+    color: '#64748b',
+    textAlign: 'center',
+    fontWeight: '500',
   },
   modalEmployeeInfo: {
     flexDirection: 'row',

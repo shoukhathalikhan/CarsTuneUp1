@@ -13,8 +13,8 @@ const subscriptionSchema = new mongoose.Schema({
   },
   startDate: {
     type: Date,
-    required: true,
-    default: Date.now
+    required: false,
+    default: null
   },
   endDate: {
     type: Date,
@@ -22,12 +22,13 @@ const subscriptionSchema = new mongoose.Schema({
   },
   nextWashDate: {
     type: Date,
-    required: true
+    required: false,
+    default: null
   },
   status: {
     type: String,
-    enum: ['active', 'paused', 'cancelled', 'expired'],
-    default: 'active'
+    enum: ['pending', 'active', 'paused', 'cancelled', 'expired'],
+    default: 'pending'
   },
   assignedEmployee: {
     type: mongoose.Schema.Types.ObjectId,

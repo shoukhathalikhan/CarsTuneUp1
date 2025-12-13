@@ -2,6 +2,9 @@ const Service = require('../models/Service.model');
 const Job = require('../models/Job.model');
 const Brand = require('../models/Brand.model');
 
+const escapeRegex = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const normalizeName = (value = '') => String(value).trim().toLowerCase();
+
 const buildVehicleTypeFilter = (type) => {
   if (!type) return undefined;
   const normalized = String(type).toLowerCase();
@@ -39,34 +42,59 @@ const calculateAdjustedPrice = async (serviceDoc, userVehicle) => {
   }
 
   try {
-    const brand = await Brand.findOne({ 
-      name: userVehicle.brand,
-      isActive: true 
+    const trimmedBrand = String(userVehicle.brand).trim();
+    if (!trimmedBrand) {
+      return basePrice;
+    }
+
+    const brand = await Brand.findOne({
+      name: { $regex: new RegExp(`^${escapeRegex(trimmedBrand)}$`, 'i') },
+      isActive: true
     });
 
     if (!brand) {
       return basePrice;
     }
 
-    const model = brand.models.find(m => 
-      m.name?.toLowerCase() === String(userVehicle.model).toLowerCase() && m.isActive
-    );
+    const normalizedModelName = normalizeName(userVehicle.model);
+    const models = Array.isArray(brand.models) ? brand.models : [];
+    const matchedModel = models.find((modelEntry) => {
+      if (!modelEntry) return false;
 
-    if (Array.isArray(model.servicePricing) && serviceDoc?._id) {
+      if (typeof modelEntry === 'string') {
+        return normalizeName(modelEntry) === normalizedModelName;
+      }
+
+      const name = modelEntry?.name ?? '';
+      if (modelEntry?.isActive === false) {
+        return false;
+      }
+
+      return normalizeName(name) === normalizedModelName;
+    });
+
+    if (!matchedModel) {
+      return basePrice;
+    }
+
+    const model = typeof matchedModel === 'string' ? { name: matchedModel } : matchedModel;
+
+    if (Array.isArray(model?.servicePricing) && serviceDoc?._id) {
       const entry = model.servicePricing.find((pricing) => {
         if (!pricing?.serviceId) return false;
         return pricing.serviceId.toString() === serviceDoc._id.toString();
       });
       if (entry && entry.finalPrice) {
-        return entry.finalPrice;
+        const numericFinal = Number(entry.finalPrice);
+        return Number.isNaN(numericFinal) ? basePrice : numericFinal;
       }
     }
 
-    if (!model || !model.pricePercentage || model.pricePercentage === 0) {
+    if (!model?.pricePercentage || Number(model.pricePercentage) === 0) {
       return basePrice;
     }
 
-    const adjustedPrice = basePrice * (1 + (model.pricePercentage || 0) / 100);
+    const adjustedPrice = basePrice * (1 + (Number(model.pricePercentage) || 0) / 100);
     return Math.round(adjustedPrice);
   } catch (error) {
     console.error('Error calculating adjusted price:', error);

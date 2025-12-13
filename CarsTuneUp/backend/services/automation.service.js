@@ -4,7 +4,6 @@ const Employee = require('../models/Employee.model');
 const Job = require('../models/Job.model');
 const User = require('../models/User.model');
 const Service = require('../models/Service.model');
-const { assignJobToBestEmployee, getAvailableEmployeesForDate } = require('./smartEmployeeAssignment');
 const { sendPushNotification } = require('./notification.service');
 
 // Calculate number of washes based on frequency and duration
@@ -114,40 +113,43 @@ exports.assignEmployeeToSubscription = async (subscriptionId) => {
     const totalWashes = calculateTotalWashes(service.frequency, subscriptionDays);
 
     console.log(`Creating ${totalWashes} wash jobs for subscription (${service.frequency})`);
+    console.log(`Using admin-assigned employee: ${assignedEmployee.userId?.name || assignedEmployee.employeeId}`);
 
-    // Step 4: Create all wash jobs for the subscription period using smart assignment
+    // Step 4: Create all wash jobs for the subscription period with the assigned employee
     const jobs = [];
     for (let i = 0; i < totalWashes; i++) {
       const scheduledDate = calculateNextWashDate(subscription.startDate, service.frequency, i);
       
       if (scheduledDate <= subscription.endDate) {
         try {
-          // Use smart assignment for each job
-          const jobAssignment = await assignJobToBestEmployee({
-            scheduledDate: scheduledDate,
+          // Create job with the admin-assigned employee (no smart assignment)
+          const job = await Job.create({
+            employeeId: assignedEmployee._id,
             customerId: customerId,
             serviceId: service._id,
             subscriptionId: subscription._id,
+            scheduledDate: scheduledDate,
+            status: 'scheduled',
             location: {
               address: subscription.userId.address
             }
           });
           
-          jobs.push(jobAssignment.job);
-          console.log(`✅ Job assigned to ${jobAssignment.assignedEmployee.userId?.name || jobAssignment.assignedEmployee.employeeId} for ${scheduledDate.toDateString()}`);
+          jobs.push(job);
+          console.log(`✅ Job assigned to ${assignedEmployee.userId?.name || assignedEmployee.employeeId} for ${scheduledDate.toDateString()}`);
         } catch (error) {
-          console.error(`❌ Failed to assign job for ${scheduledDate.toDateString()}:`, error.message);
+          console.error(`❌ Failed to create job for ${scheduledDate.toDateString()}:`, error.message);
           // Continue with other jobs even if one fails
         }
       }
     }
 
-    console.log(`Created ${jobs.length} jobs for customer ${subscription.userId.name}`);
+    console.log(`Created ${jobs.length} jobs for customer ${subscription.userId.name} with employee ${assignedEmployee.userId?.name || assignedEmployee.employeeId}`);
 
     return {
       success: true,
       jobsCreated: jobs.length,
-      message: `Successfully assigned ${jobs.length} jobs using smart load balancing`
+      message: `Successfully created ${jobs.length} jobs assigned to ${assignedEmployee.userId?.name || assignedEmployee.employeeId}`
     };
   } catch (error) {
     console.error('Error assigning employee and creating jobs:', error);

@@ -105,32 +105,15 @@ export default function HomeScreen({ navigation }) {
 
   const fetchRecentJobs = async () => {
     try {
-      const response = await api.get('/jobs/my-history');
+      const response = await api.get('/jobs/recent-works');
       
       const jobs = response.data.data.jobs || [];
-      console.log(`📋 Total jobs found: ${jobs.length}`);
+      console.log(`📋 Total recent works found: ${jobs.length}`);
       
-      const jobsWithPhotos = jobs.filter(job => 
-        (job.beforePhotos?.length > 0 || job.afterPhotos?.length > 0) && 
-        job.status === 'completed'
-      );
-      
-      console.log(`📸 Jobs with photos: ${jobsWithPhotos.length}`);
-      jobsWithPhotos.forEach((job, index) => {
-        console.log(`${index + 1}. ${job.serviceId?.name || 'Service'} - Status: ${job.status}, Before: ${job.beforePhotos?.length || 0}, After: ${job.afterPhotos?.length || 0}`);
-        if (job.beforePhotos?.length > 0) {
-          console.log(`   Before URL: ${job.beforePhotos[0]}`);
-        }
-        if (job.afterPhotos?.length > 0) {
-          console.log(`   After URL: ${job.afterPhotos[0]}`);
-        }
-      });
-      
-      const limitedJobs = jobsWithPhotos.slice(0, 3);
-      setRecentJobs(limitedJobs);
-      console.log(`✅ Set ${limitedJobs.length} recent jobs for display`);
+      setRecentJobs(jobs);
+      console.log(`✅ Set ${jobs.length} recent works for display`);
     } catch (error) {
-      console.error('Error fetching recent jobs:', error);
+      console.error('Error fetching recent works:', error);
     }
   };
 
@@ -366,66 +349,94 @@ export default function HomeScreen({ navigation }) {
         <View style={styles.photosSection}>
           <Text style={styles.photosSectionTitle}>Recent Work</Text>
           <Text style={styles.photosSectionSubtitle}>See our professional car wash results</Text>
-          
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.photosScrollView}
-          >
-            {recentJobs.map((job, index) => (
-              <TouchableOpacity
-                key={job._id}
-                style={styles.photoCard}
-                onPress={() => navigation.navigate('SubscriptionDetail', { subscriptionId: job.subscriptionId })}
-              >
-                <View style={styles.photoCardHeader}>
-                  <Text style={styles.photoServiceName}>{job.serviceId?.name || 'Car Wash'}</Text>
-                  <Text style={styles.photoDate}>
-                    {new Date(job.completedDate).toLocaleDateString('en-US', { 
-                      month: 'short', 
-                      day: 'numeric' 
-                    })}
-                  </Text>
-                </View>
-                
-                <View style={styles.photoComparison}>
-                  {job.beforePhotos?.length > 0 && (
-                    <View style={styles.photoItem}>
-                      <Image 
-                        source={{ uri: job.beforePhotos[0] }} 
-                        style={styles.photoImage} 
-                      />
-                      <Text style={styles.photoLabel}>Before</Text>
-                      {job.beforePhotos.length > 1 && (
-                        <Text style={styles.photoCount}>+{job.beforePhotos.length - 1} more</Text>
-                      )}
+
+          {(() => {
+            const job = recentJobs[0];
+            if (!job) return null;
+
+            return (
+              <View key={job._id} style={styles.photoCard}>
+                <TouchableOpacity
+                  activeOpacity={0.9}
+                  onPress={() =>
+                    job.subscriptionId
+                      ? navigation.navigate('SubscriptionDetail', {
+                          subscriptionId: job.subscriptionId,
+                          openJobId: job._id,
+                        })
+                      : null
+                  }
+                >
+                  <View style={styles.photoCardHeader}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.photoServiceName}>{job.serviceId?.name || 'Car Wash'}</Text>
+                      <Text style={styles.photoEmployeeName}>
+                        {job.employeeId?.userId?.name ? `By ${job.employeeId.userId.name}` : 'By Assigned Employee'}
+                      </Text>
                     </View>
-                  )}
-                  {job.afterPhotos?.length > 0 && (
-                    <View style={styles.photoItem}>
-                      <Image 
-                        source={{ uri: job.afterPhotos[0] }} 
-                        style={styles.photoImage} 
-                      />
-                      <Text style={styles.photoLabel}>After</Text>
-                      {job.afterPhotos.length > 1 && (
-                        <Text style={styles.photoCount}>+{job.afterPhotos.length - 1} more</Text>
-                      )}
-                    </View>
-                  )}
-                </View>
-                
-                {job.employeeId?.userId && (
-                  <View style={styles.photoFooter}>
-                    <Ionicons name="person-outline" size={14} color="#666" />
-                    <Text style={styles.photoEmployeeName}>
-                      {job.employeeId.userId.name}
+                    <Text style={styles.photoDate}>
+                      {job.completedDate
+                        ? new Date(job.completedDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                        : ''}
                     </Text>
                   </View>
+                </TouchableOpacity>
+
+                {job.beforePhotos?.length > 0 && job.afterPhotos?.length > 0 && (
+                  <View style={styles.pairedSliderWrap}>
+                    <ScrollView
+                      horizontal
+                      pagingEnabled
+                      showsHorizontalScrollIndicator={false}
+                      snapToInterval={SCREEN_WIDTH - 64}
+                      decelerationRate="fast"
+                    >
+                      {Array.from({
+                        length: Math.min(3, job.beforePhotos.length, job.afterPhotos.length),
+                      }).map((_, idx) => (
+                        <View key={`pair-${job._id}-${idx}`} style={[styles.pairedSlide, { width: SCREEN_WIDTH - 64 }]}>
+                          <View style={styles.pairedRow}>
+                            <View style={styles.pairedCell}>
+                              <Image
+                                source={{ uri: job.beforePhotos[idx] }}
+                                style={styles.pairedImage}
+                                onError={(error) => console.log('Customer app before photo load error:', error)}
+                              />
+                              <Text style={styles.photoLabel}>Before</Text>
+                            </View>
+                            <View style={styles.pairedCell}>
+                              <Image
+                                source={{ uri: job.afterPhotos[idx] }}
+                                style={styles.pairedImage}
+                                onError={(error) => console.log('Customer app after photo load error:', error)}
+                              />
+                              <Text style={styles.photoLabel}>After</Text>
+                            </View>
+                          </View>
+                        </View>
+                      ))}
+                    </ScrollView>
+                  </View>
                 )}
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
+
+                <TouchableOpacity
+                  style={styles.photoFooter}
+                  activeOpacity={0.9}
+                  onPress={() =>
+                    job.subscriptionId
+                      ? navigation.navigate('SubscriptionDetail', {
+                          subscriptionId: job.subscriptionId,
+                          openJobId: job._id,
+                        })
+                      : null
+                  }
+                >
+                  <Ionicons name="eye-outline" size={16} color="#1453b4" />
+                  <Text style={styles.viewPhotosText}>View Details</Text>
+                </TouchableOpacity>
+              </View>
+            );
+          })()}
         </View>
       )}
 
@@ -1093,10 +1104,10 @@ const styles = StyleSheet.create({
     marginHorizontal: -8,
   },
   photoCard: {
-    width: 280,
+    width: '100%',
     backgroundColor: '#F8F9FA',
     borderRadius: 8,
-    marginHorizontal: 8,
+    marginHorizontal: 0,
     padding: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
@@ -1120,6 +1131,28 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#6C757D',
   },
+  pairedSliderWrap: {
+    width: '100%',
+    marginTop: 6,
+  },
+  pairedSlide: {
+    paddingVertical: 4,
+  },
+  pairedRow: {
+    flexDirection: 'row',
+    gap: 10,
+    width: '100%',
+  },
+  pairedCell: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  pairedImage: {
+    width: '100%',
+    height: 110,
+    borderRadius: 10,
+    backgroundColor: '#EEF2F7',
+  },
   photoComparison: {
     flexDirection: 'row',
     gap: 8,
@@ -1127,6 +1160,9 @@ const styles = StyleSheet.create({
   },
   photoItem: {
     flex: 1,
+    alignItems: 'center',
+  },
+  photoSliderContent: {
     alignItems: 'center',
   },
   photoImage: {
@@ -1154,6 +1190,19 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     borderTopWidth: 1,
     borderTopColor: '#E9ECEF',
+  },
+  viewPhotosText: {
+    fontSize: 14,
+    color: '#1453b4',
+    marginLeft: 6,
+    fontWeight: '600',
+  },
+  photoPlaceholder: {
+    backgroundColor: '#F8F9FA',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E9ECEF',
   },
   photoEmployeeName: {
     fontSize: 12,

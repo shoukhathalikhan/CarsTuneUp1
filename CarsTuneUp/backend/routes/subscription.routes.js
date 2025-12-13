@@ -10,7 +10,9 @@ router.put('/:id/cancel', authenticate, authorize('customer'), subscriptionContr
 
 // Admin routes
 router.get('/', authenticate, authorize('admin'), subscriptionController.getAllSubscriptions);
-router.get('/:id', authenticate, authorize('admin', 'customer'), subscriptionController.getSubscriptionById);
+router.get('/pending', authenticate, authorize('admin'), subscriptionController.getPendingSubscriptions);
+router.post('/admin/regenerate-all-schedules', authenticate, authorize('admin'), subscriptionController.regenerateAllSchedules);
 router.put('/:id/assign-employee', authenticate, authorize('admin'), subscriptionController.assignEmployee);
+router.get('/:id', authenticate, authorize('admin', 'customer'), subscriptionController.getSubscriptionById);
 
 module.exports = router;

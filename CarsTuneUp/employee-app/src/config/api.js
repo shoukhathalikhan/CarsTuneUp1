@@ -53,6 +53,9 @@ const getApiUrl = () => {
     return 'http://10.0.2.2:5000/api';
   }
   
+  // Fallback to hardcoded IP for development
+  return 'http://192.168.1.122:5000/api';
+  
   if (Platform.OS === 'web' && typeof window !== 'undefined') {
     return `${window.location.origin.replace(/\/?$/, '')}/api`;
   }

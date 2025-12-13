@@ -57,6 +57,7 @@ const calculateFinalPrice = (basePrice: number, percentage: number) => {
 export default function BrandsPage() {
   const [brands, setBrands] = useState<Brand[]>([])
   const [loading, setLoading] = useState(true)
+  const [brandSearch, setBrandSearch] = useState('')
   const [showBrandModal, setShowBrandModal] = useState(false)
   const [showModelModal, setShowModelModal] = useState(false)
   const [editingBrand, setEditingBrand] = useState<Brand | null>(null)
@@ -141,6 +142,14 @@ export default function BrandsPage() {
       finalPrice: calculateFinalPrice(service.basePrice, modelFormData.pricePercentage)
     }))
   }, [serviceCache, modelFormData.serviceType, modelFormData.pricePercentage])
+
+  const filteredBrands = useMemo(() => {
+    const term = brandSearch.trim().toLowerCase()
+    if (!term) {
+      return brands
+    }
+    return brands.filter((brand) => brand.name?.toLowerCase().includes(term))
+  }, [brands, brandSearch])
 
   const handleBrandSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -351,20 +360,8 @@ export default function BrandsPage() {
     // Show the modal
     setShowModelModal(true)
     
-    // Fetch base prices for the model's service type
-    try {
-      setServiceBaseLoading(true)
-      const response = await api.get(`/services/base-prices?type=${serviceType}`)
-      setServiceCache(prev => ({
-        ...prev,
-        [serviceType]: response.data.data.services
-      }))
-    } catch (error) {
-      console.error('Error fetching service base prices:', error)
-      setServiceBaseError('Failed to load service prices')
-    } finally {
-      setServiceBaseLoading(false)
-    }
+    // Fetch base prices for the model's service type using the shared helper
+    await fetchServiceBasePrices(serviceType, true)
   }
 
   if (loading) {
@@ -393,8 +390,19 @@ export default function BrandsPage() {
         </button>
       </div>
 
+      <div className="mb-6">
+        <label className="block text-sm font-medium text-gray-700 mb-2">Search Brands</label>
+        <input
+          type="text"
+          value={brandSearch}
+          onChange={(e) => setBrandSearch(e.target.value)}
+          placeholder="Type to filter brands by name..."
+          className="w-full md:w-1/2 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+        />
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {brands.map((brand) => (
+        {filteredBrands.map((brand) => (
           <div key={brand._id} className="bg-white rounded-lg shadow-md overflow-hidden">
             {brand.logo ? (
               <div className="w-full h-48 bg-gray-50 flex items-center justify-center p-4">
@@ -498,6 +506,18 @@ export default function BrandsPage() {
       {brands.length === 0 && (
         <div className="text-center py-12">
           <p className="text-gray-500">No brands found. Add your first brand!</p>
+        </div>
+      )}
+
+      {brands.length > 0 && filteredBrands.length === 0 && (
+        <div className="text-center py-12">
+          <p className="text-gray-500">No brands match "{brandSearch}"</p>
+          <button
+            onClick={() => setBrandSearch('')}
+            className="mt-3 text-primary hover:text-blue-600"
+          >
+            Clear search
+          </button>
         </div>
       )}
 

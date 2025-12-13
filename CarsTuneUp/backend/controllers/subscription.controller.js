@@ -45,7 +45,7 @@ const calculateEndDate = (startDate) => {
 // @access  Customer
 exports.createSubscription = async (req, res) => {
   try {
-    const { serviceId, paymentId, startDate } = req.body;
+    const { serviceId, paymentId } = req.body;
     
     // Get service details
     const service = await Service.findById(serviceId);
@@ -56,36 +56,23 @@ exports.createSubscription = async (req, res) => {
       });
     }
     
-    // Use user-selected date or default to today
-    const selectedStartDate = startDate ? new Date(startDate) : new Date();
-    
-    // Ensure start date is not in the past
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    if (selectedStartDate < today) {
-      return res.status(400).json({
-        status: 'error',
-        message: 'Start date cannot be in the past'
-      });
-    }
-    
-    const endDate = calculateEndDate(selectedStartDate);
-    const nextWashDate = calculateNextWashDate(selectedStartDate, service.frequency);
+    // Create subscription without start date - admin will set it
+    // Set a placeholder end date (will be updated by admin)
+    const placeholderEndDate = new Date();
+    placeholderEndDate.setMonth(placeholderEndDate.getMonth() + 1);
     
     // Create subscription
     const subscription = await Subscription.create({
       userId: req.user._id,
       serviceId,
-      startDate: selectedStartDate,
-      endDate,
-      nextWashDate,
+      startDate: null,
+      endDate: placeholderEndDate,
+      nextWashDate: null,
       amount: service.price,
       paymentId,
-      paymentStatus: 'completed'
+      paymentStatus: 'completed',
+      status: 'pending'
     });
-    
-    // Auto-assign employee
-    await assignEmployeeToSubscription(subscription._id);
     
     // Populate subscription data
     const populatedSubscription = await Subscription.findById(subscription._id)
@@ -100,7 +87,7 @@ exports.createSubscription = async (req, res) => {
     
     res.status(201).json({
       status: 'success',
-      message: 'Subscription created successfully',
+      message: 'Subscription created successfully. Admin will assign an employee and set the start date.',
       data: { subscription: populatedSubscription }
     });
   } catch (error) {
@@ -179,6 +166,30 @@ exports.getAllSubscriptions = async (req, res) => {
     res.status(500).json({
       status: 'error',
       message: 'Error fetching subscriptions'
+    });
+  }
+};
+
+// @desc    Get pending subscriptions (awaiting admin assignment)
+// @route   GET /api/subscriptions/pending
+// @access  Admin
+exports.getPendingSubscriptions = async (req, res) => {
+  try {
+    const subscriptions = await Subscription.find({ status: 'pending' })
+      .populate('userId', 'name email phone address')
+      .populate('serviceId')
+      .sort({ createdAt: -1 });
+    
+    res.status(200).json({
+      status: 'success',
+      results: subscriptions.length,
+      data: { subscriptions }
+    });
+  } catch (error) {
+    console.error('Get pending subscriptions error:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'Error fetching pending subscriptions'
     });
   }
 };
@@ -266,14 +277,24 @@ exports.cancelSubscription = async (req, res) => {
   }
 };
 
-// @desc    Assign employee to subscription
+// @desc    Assign employee and set start date with automatic schedule generation
 // @route   PUT /api/subscriptions/:id/assign-employee
 // @access  Admin
 exports.assignEmployee = async (req, res) => {
   try {
-    const { employeeId } = req.body;
+    const { employeeId, startDate } = req.body;
     
-    const subscription = await Subscription.findById(req.params.id);
+    if (!employeeId || !startDate) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Employee ID and start date are required'
+      });
+    }
+    
+    const subscription = await Subscription.findById(req.params.id)
+      .populate('userId')
+      .populate('serviceId');
+    
     if (!subscription) {
       return res.status(404).json({
         status: 'error',
@@ -281,7 +302,8 @@ exports.assignEmployee = async (req, res) => {
       });
     }
     
-    const employee = await Employee.findById(employeeId);
+    const employee = await Employee.findById(employeeId)
+      .populate('userId', 'name email phone fcmToken');
     if (!employee) {
       return res.status(404).json({
         status: 'error',
@@ -289,19 +311,148 @@ exports.assignEmployee = async (req, res) => {
       });
     }
     
+    // Set start date and calculate end date
+    const newStartDate = new Date(startDate);
+    const newEndDate = new Date(newStartDate);
+    newEndDate.setMonth(newEndDate.getMonth() + 1);
+    
+    // Update subscription
     subscription.assignedEmployee = employeeId;
+    subscription.startDate = newStartDate;
+    subscription.endDate = newEndDate;
+    subscription.status = 'active';
     await subscription.save();
+    
+    // Delete any existing jobs for this subscription to avoid duplicate/incorrect assignments
+    const Job = require('../models/Job.model');
+    const deleteResult = await Job.deleteMany({ subscriptionId: subscription._id });
+    console.log(`Deleted ${deleteResult.deletedCount} existing jobs for subscription ${subscription._id}`);
+    
+    // Generate schedules automatically with the admin-assigned employee
+    const { assignEmployeeToSubscription } = require('../services/automation.service');
+    const scheduleResult = await assignEmployeeToSubscription(subscription._id);
+    
+    // Send notifications to employee and customer
+    const { sendPushNotification } = require('../services/notification.service');
+    
+    // Notify employee
+    if (employee.userId?.fcmToken) {
+      try {
+        await sendPushNotification(
+          employee.userId.fcmToken,
+          'New Service Assignment',
+          `You have been assigned ${scheduleResult.jobsCreated} wash jobs for customer ${subscription.userId.name}`,
+          {
+            subscriptionId: subscription._id.toString(),
+            type: 'new_assignment'
+          }
+        );
+      } catch (error) {
+        console.error('Error sending employee notification:', error);
+      }
+    }
+    
+    // Notify customer
+    if (subscription.userId.fcmToken) {
+      try {
+        await sendPushNotification(
+          subscription.userId.fcmToken,
+          'Subscription Confirmed',
+          `Your ${subscription.serviceId.name} subscription has been confirmed. ${scheduleResult.jobsCreated} wash schedules have been created.`,
+          {
+            subscriptionId: subscription._id.toString(),
+            type: 'subscription_confirmed'
+          }
+        );
+      } catch (error) {
+        console.error('Error sending customer notification:', error);
+      }
+    }
+    
+    // Populate updated subscription
+    const updatedSubscription = await Subscription.findById(subscription._id)
+      .populate('serviceId')
+      .populate({
+        path: 'assignedEmployee',
+        populate: {
+          path: 'userId',
+          select: 'name email phone'
+        }
+      });
     
     res.status(200).json({
       status: 'success',
-      message: 'Employee assigned successfully',
-      data: { subscription }
+      message: 'Employee assigned and schedules generated successfully',
+      data: { subscription: updatedSubscription }
     });
   } catch (error) {
     console.error('Assign employee error:', error);
     res.status(500).json({
       status: 'error',
-      message: 'Error assigning employee'
+      message: error.message || 'Error assigning employee'
+    });
+  }
+};
+
+// @desc    Regenerate all schedules with correct employee assignments
+// @route   POST /api/subscriptions/admin/regenerate-all-schedules
+// @access  Admin
+exports.regenerateAllSchedules = async (req, res) => {
+  try {
+    const Job = require('../models/Job.model');
+    
+    // Get all active subscriptions with assigned employees
+    const subscriptions = await Subscription.find({
+      status: 'active',
+      assignedEmployee: { $ne: null }
+    })
+    .populate('userId')
+    .populate('serviceId')
+    .populate({
+      path: 'assignedEmployee',
+      populate: {
+        path: 'userId',
+        select: 'name email'
+      }
+    });
+
+    console.log(`🚀 Starting regeneration for ${subscriptions.length} subscriptions`);
+
+    let totalJobsDeleted = 0;
+    let totalJobsCreated = 0;
+
+    for (const subscription of subscriptions) {
+      try {
+        // Delete existing jobs
+        const deleteResult = await Job.deleteMany({ subscriptionId: subscription._id });
+        totalJobsDeleted += deleteResult.deletedCount;
+        
+        console.log(`🗑️  Deleted ${deleteResult.deletedCount} jobs for subscription ${subscription._id}`);
+
+        // Regenerate schedules with correct employee
+        const scheduleResult = await assignEmployeeToSubscription(subscription._id);
+        totalJobsCreated += scheduleResult.jobsCreated;
+        
+        console.log(`✅ Regenerated ${scheduleResult.jobsCreated} jobs with employee ${subscription.assignedEmployee.userId?.name}`);
+      } catch (error) {
+        console.error(`❌ Error regenerating subscription ${subscription._id}:`, error.message);
+      }
+    }
+
+    res.status(200).json({
+      status: 'success',
+      message: 'All schedules regenerated successfully',
+      data: {
+        subscriptionsProcessed: subscriptions.length,
+        jobsDeleted: totalJobsDeleted,
+        jobsCreated: totalJobsCreated
+      }
+    });
+  } catch (error) {
+    console.error('Regenerate schedules error:', error);
+    res.status(500).json({
+      status: 'error',
+      message: error.message || 'Error regenerating schedules'
     });
   }
 };

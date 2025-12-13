@@ -33,6 +33,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     { name: 'Brands', icon: Car, path: '/dashboard/brands' },
     { name: 'Subscriptions', icon: FileText, path: '/dashboard/subscriptions' },
     { name: 'Jobs', icon: FileText, path: '/dashboard/jobs' },
+    { name: 'Chats', icon: FileText, path: '/dashboard/chats' },
   ]
 
   const handleLogout = () => {

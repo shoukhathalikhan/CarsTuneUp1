@@ -23,6 +23,7 @@ export default function JobDetailScreen({ route, navigation }) {
   const [showPhotoModal, setShowPhotoModal] = useState(false);
   const [photoType, setPhotoType] = useState(''); // 'before' or 'after'
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [selectedAssets, setSelectedAssets] = useState([]);
 
   useEffect(() => {
     fetchJobDetails();
@@ -36,12 +37,40 @@ export default function JobDetailScreen({ route, navigation }) {
     }
   };
 
+  const validateCount = (count) => count >= 4 && count <= 5;
+
+  const addAsset = (asset) => {
+    setSelectedAssets((prev) => {
+      if (prev.length >= 5) return prev;
+      return [...prev, asset];
+    });
+  };
+
+  const pickFromGallery = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsMultipleSelection: true,
+        selectionLimit: 5,
+        quality: 0.8,
+      });
+
+      if (!result.canceled && Array.isArray(result.assets)) {
+        setSelectedAssets(result.assets.slice(0, 5));
+      }
+    } catch (error) {
+      console.error('Error picking photos:', error);
+      Alert.alert('Error', 'Failed to select photos');
+    }
+  };
+
   const fetchJobDetails = async () => {
     try {
       const response = await api.get(`/jobs/${jobId}`);
       console.log('Job details response:', response.data);
       
       const jobData = response.data.data?.job || response.data.data;
+      console.log('Job photos - Before:', jobData?.beforePhotos, 'After:', jobData?.afterPhotos);
       setJob(jobData);
       
       console.log('Job loaded:', jobData);
@@ -70,7 +99,10 @@ export default function JobDetailScreen({ route, navigation }) {
       
       await api.put(endpoint);
       Alert.alert('Success', successMessage);
-      fetchJobDetails();
+      // Add delay to ensure backend has processed the completion
+      setTimeout(() => {
+        fetchJobDetails(); // Refresh job details
+      }, 500);
     } catch (error) {
       console.error('Error updating job status:', error);
       Alert.alert('Error', 'Failed to update job status');
@@ -100,7 +132,7 @@ export default function JobDetailScreen({ route, navigation }) {
       });
 
       if (!result.canceled && result.assets[0]) {
-        await uploadPhoto(result.assets[0]);
+        addAsset(result.assets[0]);
       }
     } catch (error) {
       console.error('Error taking photo:', error);
@@ -108,32 +140,44 @@ export default function JobDetailScreen({ route, navigation }) {
     }
   };
 
-  const uploadPhoto = async (asset) => {
+  const uploadSelectedPhotosAndUpdateJob = async () => {
+    if (!validateCount(selectedAssets.length)) {
+      Alert.alert('Invalid Photo Count', 'Please select 4 to 5 photos.');
+      return;
+    }
+
     setUploadingPhoto(true);
     try {
       const formData = new FormData();
-      formData.append(photoType === 'before' ? 'beforePhoto' : 'afterPhoto', {
-        uri: asset.uri,
-        type: 'image/jpeg',
-        name: `${photoType}-photo-${Date.now()}.jpg`,
+      const isBefore = photoType === 'before';
+      const fieldName = isBefore ? 'beforePhotos' : 'afterPhotos';
+
+      selectedAssets.forEach((asset, index) => {
+        formData.append(fieldName, {
+          uri: asset.uri,
+          type: asset.mimeType || 'image/jpeg',
+          name: `${fieldName}-${Date.now()}-${index}.jpg`,
+        });
       });
 
-      const endpoint = photoType === 'before' 
-        ? `/jobs/${jobId}/before-photo` 
-        : `/jobs/${jobId}/after-photo`;
+      const endpoint = isBefore ? `/jobs/${jobId}/start-with-photos` : `/jobs/${jobId}/complete`;
+      const successMessage = isBefore ? 'Job started successfully' : 'Job completed successfully';
 
-      const response = await api.post(endpoint, formData, {
+      await api.put(endpoint, formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
       });
 
-      Alert.alert('Success', `${photoType === 'before' ? 'Before' : 'After'} photo uploaded successfully`);
       setShowPhotoModal(false);
-      fetchJobDetails(); // Refresh job details
+      setSelectedAssets([]);
+      Alert.alert('Success', successMessage);
+      setTimeout(() => {
+        fetchJobDetails();
+      }, 500);
     } catch (error) {
-      console.error('Error uploading photo:', error);
-      Alert.alert('Error', 'Failed to upload photo');
+      console.error('Error uploading photos:', error);
+      Alert.alert('Error', error.response?.data?.message || 'Failed to upload photos');
     } finally {
       setUploadingPhoto(false);
     }
@@ -142,16 +186,17 @@ export default function JobDetailScreen({ route, navigation }) {
   const handleStartJob = () => {
     setPhotoType('before');
     setShowPhotoModal(true);
+    setSelectedAssets([]);
   };
 
   const handleCompleteJob = () => {
     setPhotoType('after');
     setShowPhotoModal(true);
+    setSelectedAssets([]);
   };
 
-  const confirmJobAction = () => {
-    setShowPhotoModal(false);
-    updateJobStatus(photoType === 'before' ? 'start' : 'complete');
+  const confirmJobAction = async () => {
+    await uploadSelectedPhotosAndUpdateJob();
   };
 
   const getStatusColor = (status) => {
@@ -298,7 +343,14 @@ export default function JobDetailScreen({ route, navigation }) {
                 <Text style={styles.photoLabel}>Before Photos</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                   {job.beforePhotos.map((photo, index) => (
-                    <Image key={`before-${index}`} source={{ uri: `http://192.168.1.125:5000${photo}` }} style={styles.photo} />
+                    <View key={`before-${index}`} style={styles.photoContainer}>
+                      <Image 
+                        source={{ uri: photo }} 
+                        style={styles.photo}
+                        onError={(error) => console.log('Before photo load error:', error)}
+                        onLoad={() => console.log('Before photo loaded successfully:', photo)}
+                      />
+                    </View>
                   ))}
                 </ScrollView>
               </View>
@@ -309,7 +361,14 @@ export default function JobDetailScreen({ route, navigation }) {
                 <Text style={styles.photoLabel}>After Photos</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                   {job.afterPhotos.map((photo, index) => (
-                    <Image key={`after-${index}`} source={{ uri: `http://192.168.1.125:5000${photo}` }} style={styles.photo} />
+                    <View key={`after-${index}`} style={styles.photoContainer}>
+                      <Image 
+                        source={{ uri: photo }} 
+                        style={styles.photo}
+                        onError={(error) => console.log('After photo load error:', error)}
+                        onLoad={() => console.log('After photo loaded successfully:', photo)}
+                      />
+                    </View>
                   ))}
                 </ScrollView>
               </View>
@@ -574,6 +633,10 @@ const styles = StyleSheet.create({
     width: 120,
     height: 90,
     borderRadius: 8,
+    marginRight: 10,
+    backgroundColor: '#f0f0f0',
+  },
+  photoContainer: {
     marginRight: 10,
   },
   modalOverlay: {

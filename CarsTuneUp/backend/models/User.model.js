@@ -67,6 +67,10 @@ const userSchema = new mongoose.Schema({
     year: Number,
     color: String,
     licensePlate: String,
+    isArchived: {
+      type: Boolean,
+      default: false
+    },
     createdAt: {
       type: Date,
       default: Date.now

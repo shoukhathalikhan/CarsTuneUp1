@@ -1,22 +1,39 @@
 const multer = require('multer');
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
 const cloudinary = require('../config/cloudinary');
+const Job = require('../models/Job.model');
 
 // Configure Cloudinary storage for job photos
+// Folder structure requirement:
+// /CarsTuneUp/customerId/serviceId/before
+// /CarsTuneUp/customerId/serviceId/after
 const jobPhotoStorage = new CloudinaryStorage({
   cloudinary: cloudinary,
-  params: {
-    folder: 'carstuneup/job-photos',
-    allowed_formats: ['jpg', 'jpeg', 'png', 'gif'],
-    public_id: (req, file) => {
-      const { jobId, photoType } = req.params;
-      const timestamp = Date.now();
-      return `${jobId}-${photoType}-${timestamp}`;
-    },
-    transformation: [
-      { width: 800, height: 600, crop: 'limit' }, // Limit size while maintaining aspect ratio
-      { quality: 'auto:good' } // Optimize quality
-    ]
+  params: async (req, file) => {
+    const jobId = req.params.id || 'unknown';
+    const stage = file.fieldname.toLowerCase().includes('before') ? 'before' : 'after';
+
+    let customerId = 'unknownCustomer';
+    let serviceId = 'unknownService';
+    try {
+      const job = await Job.findById(jobId).select('customerId serviceId');
+      if (job?.customerId) customerId = job.customerId.toString();
+      if (job?.serviceId) serviceId = job.serviceId.toString();
+    } catch (_e) {
+      // If job lookup fails, still upload to a safe fallback folder
+    }
+
+    return {
+      folder: `CarsTuneUp/${customerId}/${serviceId}/${stage}`,
+      allowed_formats: ['jpg', 'jpeg', 'png', 'gif', 'webp'],
+      public_id: `${jobId}-${stage}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+      transformation: [
+        { width: 1200, height: 1200, crop: 'limit' },
+        { quality: 'auto:good' }
+      ],
+      resource_type: 'image',
+      format: 'auto'
+    };
   },
 });
 
@@ -57,6 +74,15 @@ const uploadJobPhoto = multer({
   }
 });
 
+const uploadJobPhotos = multer({
+  storage: jobPhotoStorage,
+  fileFilter: imageFilter,
+  limits: {
+    fileSize: 5 * 1024 * 1024,
+    files: 5
+  }
+});
+
 const uploadProfilePhoto = multer({
   storage: profilePhotoStorage,
   fileFilter: imageFilter,
@@ -68,6 +94,7 @@ const uploadProfilePhoto = multer({
 
 module.exports = {
   uploadJobPhoto,
+  uploadJobPhotos,
   uploadProfilePhoto,
   jobPhotoStorage,
   profilePhotoStorage

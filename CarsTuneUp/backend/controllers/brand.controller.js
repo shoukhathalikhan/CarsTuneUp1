@@ -364,7 +364,23 @@ exports.updateModel = async (req, res) => {
     
     // Handle FormData from multer - fields come as strings
     let name = req.body?.name || '';
-    let isActive = req.body?.isActive === 'true' || req.body?.isActive === true;
+    const hasIsActive = Object.prototype.hasOwnProperty.call(req.body || {}, 'isActive');
+    const rawIsActive = hasIsActive ? req.body.isActive : undefined;
+    let isActive;
+    if (hasIsActive) {
+      if (rawIsActive === 'true' || rawIsActive === true) {
+        isActive = true;
+      } else if (rawIsActive === 'false' || rawIsActive === false) {
+        isActive = false;
+      } else if (typeof rawIsActive === 'string') {
+        const lowered = rawIsActive.trim().toLowerCase();
+        if (lowered === 'true') {
+          isActive = true;
+        } else if (lowered === 'false') {
+          isActive = false;
+        }
+      }
+    }
     const rawPercentage = req.body?.pricePercentage ?? undefined;
     const rawServiceType = req.body?.serviceType;
     let pricePercentage = rawPercentage !== undefined

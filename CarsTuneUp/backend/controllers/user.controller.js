@@ -302,10 +302,14 @@ exports.getVehicles = async (req, res) => {
       });
     }
 
+    const allVehicles = user.vehicles || [];
+    const activeVehicles = allVehicles.filter((vehicle) => vehicle?.isArchived !== true);
+    const archivedVehicles = allVehicles.filter((vehicle) => vehicle?.isArchived === true);
+
     let hasTypeUpdates = false;
 
     await Promise.all(
-      (user.vehicles || []).map(async (vehicle) => {
+      activeVehicles.map(async (vehicle) => {
         const resolvedType = await resolveModelServiceType(
           vehicle.brand,
           vehicle.model,
@@ -320,12 +324,13 @@ exports.getVehicles = async (req, res) => {
     );
 
     if (hasTypeUpdates) {
+      user.markModified('vehicles');
       await user.save();
     }
 
     res.status(200).json({
       status: 'success',
-      data: { vehicles: user.vehicles || [] }
+      data: { vehicles: activeVehicles, archivedVehicles }
     });
   } catch (error) {
     console.error('Get vehicles error:', error);
@@ -342,19 +347,43 @@ exports.addVehicle = async (req, res) => {
     
     const user = await User.findById(req.user._id);
     const resolvedType = await resolveModelServiceType(brand, model, type);
-    const newVehicle = {
-      id: Date.now().toString(),
-      brand,
-      model,
-      type: resolvedType,
-      year: year || new Date().getFullYear(),
-      color,
-      licensePlate,
-      createdAt: new Date()
-    };
-    
+
     user.vehicles = user.vehicles || [];
-    user.vehicles.push(newVehicle);
+
+    const revivedVehicle = user.vehicles.find((vehicle) => (
+      vehicle?.isArchived === true &&
+      String(vehicle.brand).toLowerCase() === String(brand).toLowerCase() &&
+      String(vehicle.model).toLowerCase() === String(model).toLowerCase()
+    ));
+
+    let newVehicle;
+
+    if (revivedVehicle) {
+      revivedVehicle.isArchived = false;
+      revivedVehicle.brand = brand;
+      revivedVehicle.model = model;
+      revivedVehicle.type = resolvedType;
+      if (year) revivedVehicle.year = year;
+      if (color) revivedVehicle.color = color;
+      if (licensePlate) revivedVehicle.licensePlate = licensePlate;
+      revivedVehicle.createdAt = revivedVehicle.createdAt || new Date();
+      newVehicle = revivedVehicle;
+    } else {
+      newVehicle = {
+        id: Date.now().toString(),
+        brand,
+        model,
+        type: resolvedType,
+        year: year || new Date().getFullYear(),
+        color,
+        licensePlate,
+        isArchived: false,
+        createdAt: new Date()
+      };
+      user.vehicles.push(newVehicle);
+    }
+    
+    user.markModified('vehicles');
     await user.save();
     
     res.status(201).json({
@@ -421,12 +450,22 @@ exports.deleteVehicle = async (req, res) => {
     const vehicleId = req.params.id;
     
     const user = await User.findById(req.user._id);
-    user.vehicles = user.vehicles.filter(vehicle => vehicle.id !== vehicleId);
+    const vehicle = (user.vehicles || []).find((entry) => entry.id === vehicleId || entry._id?.toString() === vehicleId);
+
+    if (!vehicle) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Vehicle not found'
+      });
+    }
+
+    vehicle.isArchived = true;
+    user.markModified('vehicles');
     await user.save();
     
     res.status(200).json({
       status: 'success',
-      message: 'Vehicle deleted successfully'
+      message: 'Vehicle removed successfully'
     });
   } catch (error) {
     console.error('Delete vehicle error:', error);

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,17 +7,51 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
+  Image,
   ImageBackground,
   Modal,
   Dimensions
 } from 'react-native';
 import { Video } from 'expo-av';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../config/api';
 import { useApp } from '../context/AppContext';
 
 const HERO_BANNER = require('../../assets/carztuneup_promotion.jpg');
 const SERVICE_IMAGE_FALLBACK = require('../../assets/sedan_cars.jpeg');
+
+const { width: WINDOW_WIDTH } = Dimensions.get('window');
+
+const HERO_SLIDES = [
+  {
+    id: 'carztuneup-primary',
+    image: HERO_BANNER,
+    eyebrow: 'CarzTuneup',
+    title: 'Doorstep Car Shower',
+    subtitle: 'Premium detailing experts at your location'
+  },
+  {
+    id: 'hygiene-focus',
+    image: HERO_BANNER,
+    eyebrow: 'Hygiene First',
+    title: 'Touch-Free Foam Wash',
+    subtitle: 'Safe for your paint, powerful on grime'
+  },
+  {
+    id: 'subscription',
+    image: HERO_BANNER,
+    eyebrow: 'Smart Plans',
+    title: 'Flexible Monthly Packages',
+    subtitle: 'Pick the schedule that fits your routine'
+  }
+];
+
+const HERO_SOURCE = Image.resolveAssetSource(HERO_BANNER);
+const HERO_ASPECT_RATIO =
+  HERO_SOURCE?.width && HERO_SOURCE?.height
+    ? HERO_SOURCE.width / HERO_SOURCE.height
+    : 16 / 9;
 
 const formatFrequency = (freq) => {
   const displayNames = {
@@ -66,7 +100,42 @@ export default function CarWashPlansScreen({ navigation }) {
   );
 
   const hasVehicleSelection = Boolean(currentVehicle?.brand && currentVehicle?.model);
+  const heroScrollRef = useRef(null);
+  const heroAutoScrollRef = useRef(null);
+  const [activeHeroIndex, setActiveHeroIndex] = useState(0);
+  const currentHeroSlide = HERO_SLIDES[activeHeroIndex] ?? HERO_SLIDES[0];
   // Removed vehicleLabel as it's no longer needed
+
+  const handleHeroMomentumEnd = useCallback((event) => {
+    const { contentOffset } = event.nativeEvent;
+    const newIndex = Math.round(contentOffset.x / WINDOW_WIDTH);
+    if (!Number.isNaN(newIndex)) {
+      setActiveHeroIndex(newIndex % HERO_SLIDES.length);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (heroAutoScrollRef.current) {
+      clearInterval(heroAutoScrollRef.current);
+    }
+
+    heroAutoScrollRef.current = setInterval(() => {
+      setActiveHeroIndex((prev) => {
+        const next = (prev + 1) % HERO_SLIDES.length;
+        heroScrollRef.current?.scrollTo({
+          x: next * WINDOW_WIDTH,
+          animated: true
+        });
+        return next;
+      });
+    }, 4000);
+
+    return () => {
+      if (heroAutoScrollRef.current) {
+        clearInterval(heroAutoScrollRef.current);
+      }
+    };
+  }, []);
 
   const fetchServices = useCallback(async () => {
     if (!hasVehicleSelection) {
@@ -190,6 +259,17 @@ export default function CarWashPlansScreen({ navigation }) {
     setSelectedService(null);
   };
 
+  const handleSubscribeNow = () => {
+    if (!selectedService) {
+      return;
+    }
+
+    const serviceToSubscribe = selectedService;
+    setModalVisible(false);
+    navigation.navigate('SubscriptionBooking', { service: serviceToSubscribe });
+    setSelectedService(null);
+  };
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -217,26 +297,44 @@ export default function CarWashPlansScreen({ navigation }) {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
-        <View>
-          <ImageBackground
-            source={HERO_BANNER}
-            style={styles.heroBanner}
-            imageStyle={styles.heroBannerImage}
-            resizeMode="cover"
+        <View style={styles.heroSection}>
+          <ScrollView
+            horizontal
+            pagingEnabled
+            ref={heroScrollRef}
+            showsHorizontalScrollIndicator={false}
+            onMomentumScrollEnd={handleHeroMomentumEnd}
           >
-            <View style={styles.heroBannerOverlay}>
-              <Text style={styles.heroBannerTitle}>
-                {hasVehicleSelection
-                  ? `${currentVehicle.brand} ${currentVehicle.model}`
-                  : 'Choose Your Ride'}
-              </Text>
-              <Text style={styles.heroBannerSubtitle}>
-                {hasVehicleSelection
-                  ? 'Personalized wash plans with your model pricing'
-                  : 'Add a vehicle to see curated plans'}
-              </Text>
-            </View>
-          </ImageBackground>
+            {HERO_SLIDES.map((slide) => (
+              <View key={slide.id} style={styles.heroSlide}>
+                <Image
+                  source={slide.image}
+                  style={styles.heroBannerImage}
+                  resizeMode="cover"
+                />
+              </View>
+            ))}
+          </ScrollView>
+          <View style={styles.heroIndicatorRow}>
+            {HERO_SLIDES.map((slide, index) => (
+              <View
+                key={slide.id}
+                style={[styles.heroDot, index === activeHeroIndex && styles.heroDotActive]}
+              />
+            ))}
+          </View>
+          <View style={styles.heroBannerContent}>
+            <Text style={styles.heroBannerTitle}>
+              {hasVehicleSelection
+                ? `${currentVehicle.brand ?? ''} ${currentVehicle.model ?? ''}`.trim()
+                : 'Choose Your Ride'}
+            </Text>
+            <Text style={styles.heroBannerSubtitle}>
+              {hasVehicleSelection
+                ? ''
+                : 'Add a vehicle to explore personalized car wash services.'}
+            </Text>
+          </View>
         </View>
 
         <View style={styles.enhancedSection}>
@@ -265,8 +363,9 @@ export default function CarWashPlansScreen({ navigation }) {
                 </Text>
               </View>
             ) : (
-              services.map((service) => (
-                <View key={service._id} style={styles.newPlanCard}>
+              services.map((service, index) => (
+                <React.Fragment key={service._id}>
+                <View style={styles.newPlanCard}>
                   <View style={styles.planCardLeft}>
                     <Text style={styles.serviceName}>{service.name}</Text>
                     <Text style={styles.pricePerWash}>₹{calculatePricePerWash(service)} / wash</Text>
@@ -342,32 +441,28 @@ export default function CarWashPlansScreen({ navigation }) {
                     </TouchableOpacity>
                   </View>
                 </View>
+                {index === 0 && (
+                  <LinearGradient
+                    colors={[ '#0F3D8F', '#1D6BE0', 'rgba(255,255,255,0.95)' ]}
+                    start={{ x: 0, y: 0.5 }}
+                    end={{ x: 1, y: 0.5 }}
+                    style={styles.freebieBanner}
+                  >
+                    <View style={styles.freebieTextBlock}>
+                      <Text style={styles.freebieTitle}>Get Free Air Freshener</Text>
+                      <Text style={styles.freebieSubtitle}>With Every Subscription Plan</Text>
+                    </View>
+                    <View style={styles.freebieIconCircle}>
+                      <Ionicons name="leaf" size={22} color="#FFFFFF" />
+                    </View>
+                  </LinearGradient>
+                )}
+                </React.Fragment>
               ))
             )}
 
-            {/* Special Offer Section Between Services */}
-            <View style={styles.specialOfferSection}>
-              <View style={styles.offerCard}>
-                <View style={styles.offerHeader}>
-                  <View style={styles.offerIconContainer}>
-                    <Ionicons name="flame" size={24} color="#FFFFFF" />
-                  </View>
-                  <Text style={styles.offerTitle}>Limited Time Offer</Text>
-                </View>
-                <Text style={styles.offerMainText}>Extra 15% OFF</Text>
-                <Text style={styles.offerSubText}>On all subscription plans</Text>
-                <View style={styles.offerDivider} />
-                <Text style={styles.offerNote}>Discount applied automatically at checkout</Text>
-                <View style={styles.offerFooter}>
-                  <Ionicons name="timer" size={16} color="#FFFFFF" />
-                  <Text style={styles.offerFooterText}>Offer ends soon</Text>
-                </View>
-              </View>
-            </View>
           </View>
-        )
-
-        <View style={{ height: 40 }} />
+          <View style={{ height: 40 }} />
       </ScrollView>
 
       {/* Service Details Modal */}
@@ -450,10 +545,7 @@ export default function CarWashPlansScreen({ navigation }) {
                 </View>
               </View>
 
-              <TouchableOpacity style={styles.subscribeButton} onPress={() => {
-                // Handle subscription logic here
-                closeModal();
-              }}>
+              <TouchableOpacity style={styles.subscribeButton} onPress={handleSubscribeNow}>
                 <Text style={styles.subscribeButtonText}>Subscribe Now</Text>
                 <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
               </TouchableOpacity>
@@ -739,41 +831,117 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500'
   },
-  heroBanner: {
+  heroSection: {
     marginHorizontal: 0,
-    marginTop: 0,
-    height: 220,
-    width: '100%',
+    marginBottom: 16,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB'
+  },
+  heroBanner: {
+    width: WINDOW_WIDTH,
+    aspectRatio: HERO_ASPECT_RATIO,
     borderRadius: 0,
     overflow: 'hidden',
     backgroundColor: '#000',
-    marginBottom: 0,
   },
   heroBannerImage: {
-    borderRadius: 0
+    width: '100%',
+    height: '100%',
+    borderRadius: 0,
+    resizeMode: 'cover',
+    alignSelf: 'center'
   },
-  heroBannerOverlay: {
-    flex: 1,
-    padding: 22,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(15,23,42,0.45)'
+  heroSlide: {
+    width: WINDOW_WIDTH,
+    aspectRatio: HERO_ASPECT_RATIO,
+    position: 'relative'
   },
-  heroBannerEyebrow: {
-    color: '#bfdbfe',
-    fontSize: 12,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    marginBottom: 6
+  heroIndicatorRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 12,
+    marginBottom: 8,
+    gap: 6
+  },
+  heroDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: 'rgba(20,83,180,0.3)'
+  },
+  heroDotActive: {
+    width: 20,
+    backgroundColor: '#1453b4'
+  },
+  heroBannerContent: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 24,
+    paddingVertical: 20,
+  },
+  heroGradientCard: {
+    width: '100%',
+    borderRadius: 20,
+    paddingVertical: 18,
+    paddingHorizontal: 20,
+    shadowColor: '#1453b4',
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 4,
   },
   heroBannerTitle: {
-    color: '#fff',
-    fontSize: 24,
-    fontWeight: '700'
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '700',
+    textAlign: 'center'
   },
   heroBannerSubtitle: {
-    color: '#e2e8f0',
-    marginTop: 6,
-    fontSize: 14
+    color: 'rgba(255,255,255,0.95)',
+    marginTop: 4,
+    fontSize: 12,
+    textAlign: 'center'
+  },
+  freebieBanner: {
+    marginTop: 12,
+    marginBottom: 20,
+    alignSelf: 'center',
+    width: '92%',
+    borderRadius: 18,
+    paddingVertical: 18,
+    paddingHorizontal: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    shadowColor: '#1453b4',
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  freebieTextBlock: {
+    flex: 1,
+    marginRight: 16,
+  },
+  freebieTitle: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  freebieSubtitle: {
+    color: 'rgba(255,255,255,0.9)',
+    fontSize: 13,
+  },
+  freebieIconCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   section: {
     marginHorizontal: 16,
@@ -1107,88 +1275,13 @@ const styles = StyleSheet.create({
     color: '#1453b4',
     fontWeight: '600',
   },
-  specialOfferSection: {
-    marginHorizontal: 16,
-    marginVertical: 20,
-  },
-  offerCard: {
-    background: 'linear-gradient(135deg, #1453b4 0%, #2E7CD6 50%, #4A90E2 100%)',
-    borderRadius: 16,
-    padding: 20,
-    height: 120,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#1453b4',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 16,
-    elevation: 8,
-  },
-  offerHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  offerIconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  offerTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  offerMainText: {
-    fontSize: 24,
-    fontWeight: '900',
-    color: '#FFFFFF',
-    marginBottom: 2,
-  },
-  offerSubText: {
-    fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.9)',
-    marginBottom: 8,
-  },
-  offerDivider: {
-    width: 40,
-    height: 2,
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
-    borderRadius: 2,
-    marginVertical: 8,
-  },
-  offerNote: {
-    fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.8)',
-    textAlign: 'center',
-  },
-  offerFooter: {
-    position: 'absolute',
-    bottom: 8,
-    right: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-  },
-  offerFooterText: {
-    fontSize: 11,
-    color: '#FFFFFF',
-    fontWeight: '600',
-    marginLeft: 4,
-  },
   heroBanner: {
-    height: 180,
-    marginHorizontal: 16,
+    height: 220,
+    marginHorizontal: 0,
     marginBottom: 20,
-    borderRadius: 16,
+    borderRadius: 0,
     overflow: 'hidden',
+    width: '100%',
   },
   bannerInfo: {
     padding: 18,

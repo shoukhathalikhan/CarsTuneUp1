@@ -9,6 +9,7 @@ import { AppState, Platform } from 'react-native';
 import { registerForPushNotificationsAsync, setupNotificationListeners } from './src/services/notificationService';
 import { AppProvider } from './src/context/AppContext';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
+import { CartProvider } from './src/context/CartContext';
 
 // Screens
 import HomeScreen from './src/screens/HomeScreen';
@@ -22,12 +23,20 @@ import ServiceDetailScreen from './src/screens/ServiceDetailScreen';
 import ServicesScreen from './src/screens/ServicesScreen';
 import VehicleSelectionScreen from './src/screens/VehicleSelectionScreen';
 import AddressSelectionScreen from './src/screens/AddressSelectionScreen';
+import SubscriptionBookingScreen from './src/screens/SubscriptionBookingScreen';
 import NotificationsScreen from './src/screens/NotificationsScreen';
 import PaymentMethodsScreen from './src/screens/PaymentMethodsScreen';
 import HelpSupportScreen from './src/screens/HelpSupportScreen';
 import TermsPrivacyScreen from './src/screens/TermsPrivacyScreen';
 import CarWashPlansScreen from './src/screens/CarWashPlansScreen';
+import ChatScreen from './src/screens/ChatScreen';
+import CartScreen from './src/screens/CartScreen';
+import OrderReviewScreen from './src/screens/OrderReviewScreen';
+import PaymentScreen from './src/screens/PaymentScreen';
+import LocationSelectionScreen from './src/screens/LocationSelectionScreen';
+import LocationAdditionScreen from './src/screens/LocationAdditionScreen';
 import api from './src/config/api';
+import FloatingChatButton from './src/components/FloatingChatButton';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -76,6 +85,7 @@ function AppContent() {
   const [userProfile, setUserProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(true);
   const navigationRef = useRef();
+  const [currentRouteName, setCurrentRouteName] = useState(null);
   const { logout } = useAuth();
 
   useEffect(() => {
@@ -145,45 +155,86 @@ function AppContent() {
   return (
     <>
       <StatusBar style="auto" />
-      <AppProvider>
-        <NavigationContainer ref={navigationRef}>
-          <Stack.Navigator
-            screenOptions={{ headerShown: false }}
+      <CartProvider>
+        <AppProvider>
+          <NavigationContainer
+            ref={navigationRef}
+            onReady={() => {
+              try {
+                const routeName = navigationRef.current?.getCurrentRoute?.()?.name;
+                setCurrentRouteName(routeName || null);
+              } catch (_e) {
+                setCurrentRouteName(null);
+              }
+            }}
+            onStateChange={() => {
+              try {
+                const routeName = navigationRef.current?.getCurrentRoute?.()?.name;
+                setCurrentRouteName(routeName || null);
+              } catch (_e) {
+                setCurrentRouteName(null);
+              }
+            }}
           >
-            {!isLoggedIn ? (
-              <>
-                <Stack.Screen name="Login" component={LoginScreen} />
-                <Stack.Screen name="Register" component={RegisterScreen} />
-                <Stack.Screen name="AddressSelection" component={AddressSelectionScreen} />
-                <Stack.Screen name="VehicleSelection" component={VehicleSelectionScreen} />
-                <Stack.Screen name="MainTabs" component={MainTabs} />
-                <Stack.Screen name="Services" component={ServicesScreen} />
-                <Stack.Screen name="ServiceDetail" component={ServiceDetailScreen} />
-                <Stack.Screen name="CarWashPlans" component={CarWashPlansScreen} />
-                <Stack.Screen name="SubscriptionDetail" component={SubscriptionDetailScreen} />
-                <Stack.Screen name="Notifications" component={NotificationsScreen} />
-                <Stack.Screen name="PaymentMethods" component={PaymentMethodsScreen} />
-                <Stack.Screen name="HelpSupport" component={HelpSupportScreen} />
-                <Stack.Screen name="TermsPrivacy" component={TermsPrivacyScreen} />
-              </>
-            ) : (
-              <>
-                <Stack.Screen name="AddressSelection" component={AddressSelectionScreen} />
-                <Stack.Screen name="VehicleSelection" component={VehicleSelectionScreen} />
-                <Stack.Screen name="MainTabs" component={MainTabs} />
-                <Stack.Screen name="Services" component={ServicesScreen} />
-                <Stack.Screen name="ServiceDetail" component={ServiceDetailScreen} />
-                <Stack.Screen name="CarWashPlans" component={CarWashPlansScreen} />
-                <Stack.Screen name="SubscriptionDetail" component={SubscriptionDetailScreen} />
-                <Stack.Screen name="Notifications" component={NotificationsScreen} />
-                <Stack.Screen name="PaymentMethods" component={PaymentMethodsScreen} />
-                <Stack.Screen name="HelpSupport" component={HelpSupportScreen} />
-                <Stack.Screen name="TermsPrivacy" component={TermsPrivacyScreen} />
-              </>
-            )}
-          </Stack.Navigator>
-        </NavigationContainer>
-      </AppProvider>
+            <Stack.Navigator
+              screenOptions={{ headerShown: false }}
+            >
+              {!isLoggedIn ? (
+                <>
+                  <Stack.Screen name="Login" component={LoginScreen} />
+                  <Stack.Screen name="Register" component={RegisterScreen} />
+                  <Stack.Screen name="AddressSelection" component={AddressSelectionScreen} />
+                  <Stack.Screen name="LocationSelection" component={LocationSelectionScreen} />
+                  <Stack.Screen name="LocationAddition" component={LocationAdditionScreen} />
+                  <Stack.Screen name="VehicleSelection" component={VehicleSelectionScreen} />
+                  <Stack.Screen name="MainTabs" component={MainTabs} />
+                  <Stack.Screen name="Services" component={ServicesScreen} />
+                  <Stack.Screen name="ServiceDetail" component={ServiceDetailScreen} />
+                  <Stack.Screen name="Cart" component={CartScreen} />
+                  <Stack.Screen name="OrderReview" component={OrderReviewScreen} />
+                  <Stack.Screen name="Payment" component={PaymentScreen} />
+                  <Stack.Screen name="CarWashPlans" component={CarWashPlansScreen} />
+                  <Stack.Screen name="SubscriptionBooking" component={SubscriptionBookingScreen} />
+                  <Stack.Screen name="SubscriptionDetail" component={SubscriptionDetailScreen} />
+                  <Stack.Screen name="Notifications" component={NotificationsScreen} />
+                  <Stack.Screen name="PaymentMethods" component={PaymentMethodsScreen} />
+                  <Stack.Screen name="HelpSupport" component={HelpSupportScreen} />
+                  <Stack.Screen name="TermsPrivacy" component={TermsPrivacyScreen} />
+                  <Stack.Screen name="Chat" component={ChatScreen} />
+                </>
+              ) : (
+                <>
+                  <Stack.Screen name="AddressSelection" component={AddressSelectionScreen} />
+                  <Stack.Screen name="LocationSelection" component={LocationSelectionScreen} />
+                  <Stack.Screen name="LocationAddition" component={LocationAdditionScreen} />
+                  <Stack.Screen name="VehicleSelection" component={VehicleSelectionScreen} />
+                  <Stack.Screen name="MainTabs" component={MainTabs} />
+                  <Stack.Screen name="Services" component={ServicesScreen} />
+                  <Stack.Screen name="ServiceDetail" component={ServiceDetailScreen} />
+                  <Stack.Screen name="Cart" component={CartScreen} />
+                  <Stack.Screen name="OrderReview" component={OrderReviewScreen} />
+                  <Stack.Screen name="Payment" component={PaymentScreen} />
+                  <Stack.Screen name="CarWashPlans" component={CarWashPlansScreen} />
+                  <Stack.Screen name="SubscriptionBooking" component={SubscriptionBookingScreen} />
+                  <Stack.Screen name="SubscriptionDetail" component={SubscriptionDetailScreen} />
+                  <Stack.Screen name="Notifications" component={NotificationsScreen} />
+                  <Stack.Screen name="PaymentMethods" component={PaymentMethodsScreen} />
+                  <Stack.Screen name="HelpSupport" component={HelpSupportScreen} />
+                  <Stack.Screen name="TermsPrivacy" component={TermsPrivacyScreen} />
+                  <Stack.Screen name="Chat" component={ChatScreen} />
+                </>
+              )}
+            </Stack.Navigator>
+          </NavigationContainer>
+
+          {isLoggedIn && (
+            <FloatingChatButton
+              hidden={currentRouteName === 'Chat'}
+              onPress={() => navigationRef.current?.navigate('Chat')}
+            />
+          )}
+        </AppProvider>
+      </CartProvider>
     </>
   );
 }

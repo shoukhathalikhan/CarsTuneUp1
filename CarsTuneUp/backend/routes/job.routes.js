@@ -2,23 +2,26 @@ const express = require('express');
 const router = express.Router();
 const jobController = require('../controllers/job.controller');
 const { authenticate, authorize } = require('../middleware/auth.middleware');
-const upload = require('../middleware/upload.middleware');
+const { uploadJobPhotos } = require('../middleware/cloudinaryStorage');
 const { getEmployeeStats, assignIndividualJob } = require('../services/automation.service');
 
 // Employee routes
 router.get('/my-jobs', authenticate, authorize('employee'), jobController.getMyJobs);
 router.get('/my-jobs/today', authenticate, authorize('employee'), jobController.getTodayJobs);
 router.put('/:id/start', authenticate, authorize('employee'), jobController.startJob);
+router.put('/:id/start-with-photos', authenticate, authorize('employee'), uploadJobPhotos.fields([
+  { name: 'beforePhotos', maxCount: 5 }
+]), jobController.startJobWithPhotos);
 router.post('/:id/before-photo', authenticate, authorize('employee'), jobController.uploadBeforePhotoMiddleware, jobController.uploadBeforePhoto);
 router.post('/:id/after-photo', authenticate, authorize('employee'), jobController.uploadAfterPhotoMiddleware, jobController.uploadAfterPhoto);
-router.put('/:id/complete', authenticate, authorize('employee'), upload.fields([
-  { name: 'beforePhotos', maxCount: 5 },
+router.put('/:id/complete', authenticate, authorize('employee'), uploadJobPhotos.fields([
   { name: 'afterPhotos', maxCount: 5 }
 ]), jobController.completeJob);
 router.put('/:id/cancel', authenticate, authorize('employee'), jobController.cancelJob);
 
 // Customer routes
 router.get('/my-history', authenticate, authorize('customer'), jobController.getMyJobHistory);
+router.get('/recent-works', authenticate, authorize('customer'), jobController.getRecentWorks);
 router.put('/:id/rate', authenticate, authorize('customer'), jobController.rateJob);
 
 // Individual job booking (for immediate bookings)

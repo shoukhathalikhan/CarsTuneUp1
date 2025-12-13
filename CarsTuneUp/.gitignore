@@ -52,3 +52,4 @@ backend/uploads/
 *.pem
 *.key
 .vercel
+

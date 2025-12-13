@@ -276,6 +276,19 @@ export default function ProfileScreen({ navigation }) {
         <View style={styles.menuContainer}>
           <TouchableOpacity 
             style={styles.menuItem}
+            onPress={() => navigation.getParent()?.navigate('Chat')}
+          >
+            <View style={styles.menuItemLeft}>
+              <View style={styles.iconCircle}>
+                <Ionicons name="chatbubble-ellipses-outline" size={24} color="#1453b4" />
+              </View>
+              <Text style={styles.menuItemTitle}>Chat Support</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={24} color="#ccc" />
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.menuItem}
             onPress={() => navigation.getParent()?.navigate('Notifications')}
           >
             <View style={styles.menuItemLeft}>

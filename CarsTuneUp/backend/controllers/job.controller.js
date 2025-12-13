@@ -1,12 +1,139 @@
 const Job = require('../models/Job.model');
 const Employee = require('../models/Employee.model');
 const Subscription = require('../models/Subscription.model');
-const { uploadJobPhoto } = require('../middleware/cloudinaryStorage');
 const { deletePhotos } = require('../utils/photoUtils');
 
+// Cleanup function to keep only latest 1 work per customer
+const cleanupOldWorks = async (customerId) => {
+  try {
+    const allCompletedJobs = await Job.find({ 
+      customerId, 
+      status: 'completed',
+      $or: [
+        { beforePhotos: { $exists: true, $ne: [] } },
+        { afterPhotos: { $exists: true, $ne: [] } }
+      ]
+    }).sort({ completedDate: -1 });
+
+    if (allCompletedJobs.length > 1) {
+      const jobsToDelete = allCompletedJobs.slice(1);
+      for (const job of jobsToDelete) {
+        // Delete photos from Cloudinary
+        const allPhotos = [...(job.beforePhotos || []), ...(job.afterPhotos || [])];
+        if (allPhotos.length > 0) {
+          try {
+            await deletePhotos(allPhotos);
+            console.log(`Deleted photos for job ${job._id}`);
+          } catch (error) {
+            console.error(`Error deleting photos for job ${job._id}:`, error);
+          }
+        }
+        // Delete the job document
+        await Job.findByIdAndDelete(job._id);
+        console.log(`Deleted old job ${job._id} for customer ${customerId}`);
+      }
+    }
+  } catch (error) {
+    console.error('Error in cleanupOldWorks:', error);
+  }
+};
+
 // Middleware for photo uploads
-exports.uploadBeforePhotoMiddleware = uploadJobPhoto.single('beforePhoto');
-exports.uploadAfterPhotoMiddleware = uploadJobPhoto.single('afterPhoto');
+const { uploadJobPhoto } = require('../middleware/cloudinaryStorage');
+
+ const validatePhotoCount = (items, min = 4, max = 5) => {
+   if (!Array.isArray(items)) return false;
+   return items.length >= min && items.length <= max;
+ };
+
+exports.uploadBeforePhotoMiddleware = (req, res, next) => {
+  console.log('Before photo middleware called');
+  uploadJobPhoto.single('beforePhoto')(req, res, (err) => {
+    if (err) {
+      console.error('Before photo upload middleware error:', err);
+      return res.status(400).json({
+        status: 'error',
+        message: 'Photo upload failed',
+        error: err.message
+      });
+    }
+    console.log('Before photo middleware success, file:', req.file);
+    next();
+  });
+};
+
+exports.uploadAfterPhotoMiddleware = (req, res, next) => {
+  console.log('After photo middleware called');
+  uploadJobPhoto.single('afterPhoto')(req, res, (err) => {
+    if (err) {
+      console.error('After photo upload middleware error:', err);
+      return res.status(400).json({
+        status: 'error',
+        message: 'Photo upload failed',
+        error: err.message
+      });
+    }
+    console.log('After photo middleware success, file:', req.file);
+    next();
+  });
+};
+
+ // @desc    Start job (requires 4-5 before photos)
+ // @route   PUT /api/jobs/:id/start-with-photos
+ // @access  Employee
+ exports.startJobWithPhotos = async (req, res) => {
+   try {
+     const employee = await Employee.findOne({ userId: req.user._id });
+     const job = await Job.findById(req.params.id);
+
+     if (!job) {
+       return res.status(404).json({
+         status: 'error',
+         message: 'Job not found'
+       });
+     }
+
+     if (job.employeeId.toString() !== employee._id.toString()) {
+       return res.status(403).json({
+         status: 'error',
+         message: 'Access denied'
+       });
+     }
+
+     const beforePhotos = req.files?.beforePhotos?.map((f) => f.path || f.secure_url).filter(Boolean) || [];
+     if (!validatePhotoCount(beforePhotos, 4, 5)) {
+       return res.status(400).json({
+         status: 'error',
+         message: 'Please upload 4 to 5 before photos (exterior and interior)'
+       });
+     }
+
+     if (job.beforePhotos?.length) {
+       try {
+         await deletePhotos(job.beforePhotos);
+       } catch (error) {
+         console.error('Error deleting existing before photos:', error);
+       }
+     }
+
+     job.beforePhotos = beforePhotos;
+     job.status = 'in-progress';
+     job.startTime = new Date();
+     await job.save();
+
+     res.status(200).json({
+       status: 'success',
+       message: 'Job started successfully with before photos',
+       data: { job }
+     });
+   } catch (error) {
+     console.error('Start job with photos error:', error);
+     res.status(500).json({
+       status: 'error',
+       message: 'Error starting job'
+     });
+   }
+ };
 
 // @desc    Upload before photo
 // @route   POST /api/jobs/:id/before-photo
@@ -38,6 +165,14 @@ exports.uploadBeforePhoto = async (req, res) => {
       });
     }
     
+    console.log('Before photo uploaded to Cloudinary:', req.file.path);
+    console.log('Cloudinary file details:', {
+      path: req.file.path,
+      filename: req.file.filename,
+      originalname: req.file.originalname,
+      size: req.file.size
+    });
+    
     // Replace old photos with new photo (delete old ones, add new one)
     const oldPhotos = job.beforePhotos || [];
     
@@ -53,16 +188,22 @@ exports.uploadBeforePhoto = async (req, res) => {
     }
     
     // Save Cloudinary URL instead of local path
-    job.beforePhotos = [req.file.secure_url]; // Use Cloudinary secure URL
+    job.beforePhotos = [req.file.path]; // Use Cloudinary path
     
     await job.save();
+    
+    console.log('Job after before photo save:', {
+      jobId: job._id,
+      beforePhotos: job.beforePhotos,
+      afterPhotos: job.afterPhotos
+    });
     
     res.status(200).json({
       status: 'success',
       message: 'Before photo updated successfully',
       data: {
-        photoUrl: req.file.secure_url, // Return Cloudinary URL
-        publicId: req.file.public_id, // Cloudinary public ID
+        photoUrl: req.file.path, // Return Cloudinary path
+        publicId: req.file.filename, // Cloudinary filename
         oldPhotosReplaced: oldPhotos.length
       }
     });
@@ -105,6 +246,14 @@ exports.uploadAfterPhoto = async (req, res) => {
       });
     }
     
+    console.log('After photo uploaded to Cloudinary:', req.file.path);
+    console.log('Cloudinary file details:', {
+      path: req.file.path,
+      filename: req.file.filename,
+      originalname: req.file.originalname,
+      size: req.file.size
+    });
+    
     // Replace old photos with new photo (delete old ones, add new one)
     const oldPhotos = job.afterPhotos || [];
     
@@ -120,16 +269,22 @@ exports.uploadAfterPhoto = async (req, res) => {
     }
     
     // Save Cloudinary URL instead of local path
-    job.afterPhotos = [req.file.secure_url]; // Use Cloudinary secure URL
+    job.afterPhotos = [req.file.path]; // Use Cloudinary path
     
     await job.save();
+    
+    console.log('Job after after photo save:', {
+      jobId: job._id,
+      beforePhotos: job.beforePhotos,
+      afterPhotos: job.afterPhotos
+    });
     
     res.status(200).json({
       status: 'success',
       message: 'After photo updated successfully',
       data: {
-        photoUrl: req.file.secure_url, // Return Cloudinary URL
-        publicId: req.file.public_id, // Cloudinary public ID
+        photoUrl: req.file.path, // Return Cloudinary path
+        publicId: req.file.filename, // Cloudinary filename
         oldPhotosReplaced: oldPhotos.length
       }
     });
@@ -255,6 +410,7 @@ exports.getMyJobs = async (req, res) => {
     
     const { status } = req.query;
     const filter = { employeeId: employee._id };
+
     if (status) filter.status = status;
     
     const jobs = await Job.find(filter)
@@ -380,17 +536,41 @@ exports.completeJob = async (req, res) => {
       });
     }
     
-    // Handle photo uploads
-    const beforePhotos = req.files?.beforePhotos?.map(file => file.secure_url) || [];
-    const afterPhotos = req.files?.afterPhotos?.map(file => file.secure_url) || [];
+    // Enforce before photos exist (uploaded at start)
+    if (!job.beforePhotos || job.beforePhotos.length < 4) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Before photos (4 to 5) are required before completing the job'
+      });
+    }
+
+    const afterPhotos = req.files?.afterPhotos?.map((f) => f.path || f.secure_url).filter(Boolean) || [];
+    if (!validatePhotoCount(afterPhotos, 4, 5)) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Please upload 4 to 5 after photos to complete the job'
+      });
+    }
+
+    // Replace any existing after photos for this job
+    if (job.afterPhotos?.length) {
+      try {
+        await deletePhotos(job.afterPhotos);
+      } catch (error) {
+        console.error('Error deleting existing after photos:', error);
+      }
+    }
+
+    job.afterPhotos = afterPhotos;
     
     job.status = 'completed';
     job.completedDate = new Date();
     job.endTime = new Date();
-    job.beforePhotos = beforePhotos;
-    job.afterPhotos = afterPhotos;
     job.notes = req.body.notes || null;
     await job.save();
+
+    // Run cleanup to keep only latest 1 work for this customer
+    await cleanupOldWorks(job.customerId);
     
     // Update employee stats
     employee.totalJobsCompleted += 1;
@@ -505,6 +685,87 @@ exports.getMyJobHistory = async (req, res) => {
     res.status(500).json({
       status: 'error',
       message: 'Error fetching job history'
+    });
+  }
+};
+
+exports.getRecentWorks = async (req, res) => {
+  try {
+    console.log('Fetching recent works for user:', req.user._id);
+    
+    // First check if user has any completed jobs at all
+    const allCompletedJobs = await Job.find({ 
+      customerId: req.user._id, 
+      status: 'completed'
+    }).sort({ completedDate: -1 });
+    
+    console.log(`User has ${allCompletedJobs.length} total completed jobs`);
+    
+    if (allCompletedJobs.length === 0) {
+      return res.status(200).json({
+        status: 'success',
+        results: 0,
+        data: { jobs: [] }
+      });
+    }
+    
+    // Now fetch jobs with photos
+    const jobs = await Job.find({ 
+      customerId: req.user._id, 
+      status: 'completed',
+      $or: [
+        { beforePhotos: { $exists: true, $ne: [] } },
+        { afterPhotos: { $exists: true, $ne: [] } }
+      ]
+    })
+      .populate('serviceId', 'name')
+      .populate({
+        path: 'employeeId',
+        populate: {
+          path: 'userId',
+          select: 'name'
+        }
+      })
+      .sort({ completedDate: -1 })
+      .limit(1);
+    
+    console.log(`Found ${jobs.length} recent works with photos`);
+    
+    // If no jobs with photos but user has completed jobs, return the most recent completed jobs
+    if (jobs.length === 0 && allCompletedJobs.length > 0) {
+      console.log('No jobs with photos found, returning most recent completed job without photos');
+      const recentJobWithoutPhotos = await Job.findOne({
+        customerId: req.user._id,
+        status: 'completed'
+      })
+        .populate('serviceId', 'name')
+        .populate({
+          path: 'employeeId',
+          populate: {
+            path: 'userId',
+            select: 'name'
+          }
+        })
+        .sort({ completedDate: -1 });
+
+      const list = recentJobWithoutPhotos ? [recentJobWithoutPhotos] : [];
+      return res.status(200).json({
+        status: 'success',
+        results: list.length,
+        data: { jobs: list }
+      });
+    }
+    
+    res.status(200).json({
+      status: 'success',
+      results: jobs.length,
+      data: { jobs }
+    });
+  } catch (error) {
+    console.error('Get recent works error:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'Error fetching recent works'
     });
   }
 };

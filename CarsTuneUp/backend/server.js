@@ -18,6 +18,7 @@ const jobRoutes = require('./routes/job.routes');
 const analyticsRoutes = require('./routes/analytics.routes');
 const brandRoutes = require('./routes/brand.routes');
 const feedbackRoutes = require('./routes/feedback.routes');
+const chatRoutes = require('./routes/chat.routes');
 
 // Import automation services
 const { assignJobsAutomatically, sendUpcomingWashNotifications } = require('./services/automation.service');
@@ -96,6 +97,7 @@ app.use('/api/jobs', jobRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/brands', brandRoutes);
 app.use('/api/feedback', feedbackRoutes);
+app.use('/api/chats', chatRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
