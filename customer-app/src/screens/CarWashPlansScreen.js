@@ -1,0 +1,2059 @@
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  ActivityIndicator,
+  RefreshControl,
+  Image,
+  ImageBackground,
+  Modal,
+  Dimensions
+} from 'react-native';
+import { Video } from 'expo-av';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
+import api from '../config/api';
+import { useApp } from '../context/AppContext';
+
+const HERO_BANNER = require('../../assets/carztuneup_promotion.jpg');
+const SERVICE_IMAGE_FALLBACK = require('../../assets/sedan_cars.jpeg');
+
+const { width: WINDOW_WIDTH } = Dimensions.get('window');
+
+const HERO_SLIDES = [
+  {
+    id: 'carztuneup-primary',
+    image: HERO_BANNER,
+    eyebrow: 'CarzTuneup',
+    title: 'Doorstep Car Shower',
+    subtitle: 'Premium detailing experts at your location'
+  },
+  {
+    id: 'hygiene-focus',
+    image: HERO_BANNER,
+    eyebrow: 'Hygiene First',
+    title: 'Touch-Free Foam Wash',
+    subtitle: 'Safe for your paint, powerful on grime'
+  },
+  {
+    id: 'subscription',
+    image: HERO_BANNER,
+    eyebrow: 'Smart Plans',
+    title: 'Flexible Monthly Packages',
+    subtitle: 'Pick the schedule that fits your routine'
+  }
+];
+
+const HERO_SOURCE = Image.resolveAssetSource(HERO_BANNER);
+const HERO_ASPECT_RATIO =
+  HERO_SOURCE?.width && HERO_SOURCE?.height
+    ? HERO_SOURCE.width / HERO_SOURCE.height
+    : 16 / 9;
+
+const formatFrequency = (freq) => {
+  const displayNames = {
+    'daily': 'Daily',
+    '2-days-once': 'Every 2 Days',
+    '3-days-once': 'Every 3 Days',
+    'weekly-once': 'Weekly',
+    'one-time': 'One Time'
+  };
+  return displayNames[freq] || freq;
+};
+
+const resolveImageSource = (url) => {
+  if (url && url.startsWith('http')) {
+    return { uri: url };
+  }
+
+  if (url) {
+    const base = api.defaults.baseURL?.replace(/\/api\/?$/, '') || '';
+    const normalizedPath = url.startsWith('/') ? url : `/${url}`;
+    return { uri: `${base}${normalizedPath}` };
+  }
+
+  return SERVICE_IMAGE_FALLBACK;
+};
+
+const normalizeVehicleType = (raw) => {
+  if (!raw) return 'hatchback-sedan';
+  const value = raw.toString().toLowerCase();
+  if (value.includes('suv') || value.includes('muv')) {
+    return 'suv-muv';
+  }
+  return 'hatchback-sedan';
+};
+
+export default function CarWashPlansScreen({ navigation }) {
+  const { currentVehicle, refreshVehicles } = useApp();
+  const [services, setServices] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [selectedService, setSelectedService] = useState(null);
+  const [modalVisible, setModalVisible] = useState(false);
+  const currentVehicleType = useMemo(
+    () => normalizeVehicleType(currentVehicle?.type),
+    [currentVehicle?.type]
+  );
+
+  const hasVehicleSelection = Boolean(currentVehicle?.brand && currentVehicle?.model);
+  const heroScrollRef = useRef(null);
+  const heroAutoScrollRef = useRef(null);
+  const [activeHeroIndex, setActiveHeroIndex] = useState(0);
+  const currentHeroSlide = HERO_SLIDES[activeHeroIndex] ?? HERO_SLIDES[0];
+  // Removed vehicleLabel as it's no longer needed
+
+  const handleHeroMomentumEnd = useCallback((event) => {
+    const { contentOffset } = event.nativeEvent;
+    const newIndex = Math.round(contentOffset.x / WINDOW_WIDTH);
+    if (!Number.isNaN(newIndex)) {
+      setActiveHeroIndex(newIndex % HERO_SLIDES.length);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (heroAutoScrollRef.current) {
+      clearInterval(heroAutoScrollRef.current);
+    }
+
+    heroAutoScrollRef.current = setInterval(() => {
+      setActiveHeroIndex((prev) => {
+        const next = (prev + 1) % HERO_SLIDES.length;
+        heroScrollRef.current?.scrollTo({
+          x: next * WINDOW_WIDTH,
+          animated: true
+        });
+        return next;
+      });
+    }, 4000);
+
+    return () => {
+      if (heroAutoScrollRef.current) {
+        clearInterval(heroAutoScrollRef.current);
+      }
+    };
+  }, []);
+
+  const fetchServices = useCallback(async () => {
+    if (!hasVehicleSelection) {
+      setServices([]);
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const params = {};
+      
+      if (currentVehicle?.brand && currentVehicle?.model) {
+        params.userBrand = currentVehicle.brand;
+        params.userModel = currentVehicle.model;
+      }
+      
+      const response = await api.get('/services', { params });
+      const allServices = response.data?.data?.services || [];
+      const filtered = allServices.filter(
+        (service) => normalizeVehicleType(service.vehicleType) === currentVehicleType
+      );
+
+      setServices(filtered);
+    } catch (error) {
+      console.error('Error fetching services:', error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [currentVehicle, currentVehicleType, hasVehicleSelection]);
+
+  useEffect(() => {
+    fetchServices();
+  }, [fetchServices]);
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', async () => {
+      await refreshVehicles();
+      fetchServices();
+    });
+
+    return unsubscribe;
+  }, [navigation, refreshVehicles, fetchServices]);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchServices();
+  };
+
+  const calculatePricePerWash = (service) => {
+    if (!service || !service.price) return 0;
+    
+    // For one-time services, show the full price
+    if (service.frequency === 'one-time') {
+      return service.price;
+    }
+    
+    // Calculate washes based on frequency
+    let washesPerMonth = 1;
+    switch (service.frequency) {
+      case 'daily':
+        washesPerMonth = 30;
+        break;
+      case '2-days-once':
+        washesPerMonth = 15;
+        break;
+      case '3-days-once':
+        washesPerMonth = 10;
+        break;
+      case 'weekly-once':
+        washesPerMonth = 4;
+        break;
+      case 'one-time':
+        washesPerMonth = 1;
+        break;
+      default:
+        washesPerMonth = 1;
+    }
+    
+    const pricePerWash = service.price / washesPerMonth;
+    return Math.round(pricePerWash * 100) / 100; // Round to 2 decimal places
+  };
+
+  const getWashFrequencyText = (service) => {
+    if (!service || !service.frequency) return '1 wash/month';
+    
+    if (service.frequency === 'one-time') {
+      return '1 wash';
+    }
+    
+    switch (service.frequency) {
+      case 'daily':
+        return '30 washes/month';
+      case '2-days-once':
+        return '15 washes/month';
+      case '3-days-once':
+        return '10 washes/month';
+      case 'weekly-once':
+        return '4 washes/month';
+      default:
+        return '1 wash/month';
+    }
+  };
+
+  const handleBookNow = (service) => {
+    navigation.navigate('ServiceDetail', { service, action: 'book' });
+  };
+
+  const handleLogout = () => {
+    // Add your logout logic here
+    navigation.navigate('Login'); // or whatever your login screen is called
+  };
+
+  const handlePlanPress = (service) => {
+    setSelectedService(service);
+    setModalVisible(true);
+  };
+
+  const closeModal = () => {
+    setModalVisible(false);
+    setSelectedService(null);
+  };
+
+  const handleSubscribeNow = () => {
+    if (!selectedService) {
+      return;
+    }
+
+    const serviceToNavigate = selectedService;
+    setModalVisible(false);
+    navigation.navigate('ServiceDetail', { service: serviceToNavigate });
+    setSelectedService(null);
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#1453b4" />
+        <Text style={styles.loadingText}>Fetching plans...</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.container}>
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => navigation.goBack()}>
+          <Ionicons name="arrow-back" size={24} color="#1453b4" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Car Shower Plans</Text>
+        <TouchableOpacity onPress={handleLogout}>
+          <Ionicons name="log-out-outline" size={24} color="#1453b4" />
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView
+        style={styles.scrollView}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+      >
+        <View style={styles.heroSection}>
+          <ScrollView
+            horizontal
+            pagingEnabled
+            ref={heroScrollRef}
+            showsHorizontalScrollIndicator={false}
+            onMomentumScrollEnd={handleHeroMomentumEnd}
+          >
+            {HERO_SLIDES.map((slide) => (
+              <View key={slide.id} style={styles.heroSlide}>
+                <Image
+                  source={slide.image}
+                  style={styles.heroBannerImage}
+                  resizeMode="cover"
+                />
+              </View>
+            ))}
+          </ScrollView>
+          <View style={styles.heroIndicatorRow}>
+            {HERO_SLIDES.map((slide, index) => (
+              <View
+                key={slide.id}
+                style={[styles.heroDot, index === activeHeroIndex && styles.heroDotActive]}
+              />
+            ))}
+          </View>
+          <View style={styles.heroBannerContent}>
+            <Text style={styles.heroBannerTitle}>
+              {hasVehicleSelection
+                ? `${currentVehicle.brand ?? ''} ${currentVehicle.model ?? ''}`.trim()
+                : 'Choose Your Ride'}
+            </Text>
+            <Text style={styles.heroBannerSubtitle}>
+              {hasVehicleSelection
+                ? ''
+                : 'Add a vehicle to explore personalized car wash services.'}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.enhancedSection}>
+            <Text style={styles.enhancedSectionTitle}>
+              {hasVehicleSelection ? 'Choose Your Plan' : 'Select a Vehicle'}
+            </Text>
+            
+            {!hasVehicleSelection ? (
+              <View style={styles.emptyState}>
+                <Ionicons name="car-sport-outline" size={32} color="#6C757D" />
+                <Text style={styles.emptyStateText}>
+                  Add a vehicle in your profile to view personalized plans.
+                </Text>
+                <TouchableOpacity
+                  style={styles.addVehicleButton}
+                  onPress={() => navigation.navigate('VehicleSelection', { fromHome: true })}
+                >
+                  <Text style={styles.addVehicleButtonText}>Select Vehicle</Text>
+                </TouchableOpacity>
+              </View>
+            ) : services.length === 0 ? (
+              <View style={styles.emptyState}>
+                <Ionicons name="information-circle-outline" size={28} color="#6C757D" />
+                <Text style={styles.emptyStateText}>
+                  No plans configured yet for this vehicle type.
+                </Text>
+              </View>
+            ) : (
+              services.map((service, index) => (
+                <View key={service._id} style={[styles.serviceCardContainer, index < services.length - 1 && styles.serviceCardSpacing]}>
+                  <View style={styles.newPlanCard}>
+                    <View style={styles.planCardLeft}>
+                      <Text style={styles.serviceName}>{service.name}</Text>
+                      <Text style={styles.pricePerWash}>₹{calculatePricePerWash(service)} / wash</Text>
+                      <Text style={styles.washFrequency}>{getWashFrequencyText(service)}</Text>
+                      
+                      <Text style={styles.typesOfServicesLabel}>Types of Services</Text>
+                      <View style={styles.featuresList}>
+                        <View style={styles.featureItem}>
+                          <Ionicons name="checkmark-circle" size={16} color="#10B981" />
+                          <Text style={styles.featureItemText}>Exterior Foam Wash + Interior Vacuum Cleaning</Text>
+                        </View>
+                        <View style={styles.featureItem}>
+                          <Ionicons name="checkmark-circle" size={16} color="#10B981" />
+                          <Text style={styles.featureItemText}>Dashboard Polish + Tyre Polish</Text>
+                        </View>
+                        <View style={styles.featureItem}>
+                          <Ionicons name="checkmark-circle" size={16} color="#10B981" />
+                          <Text style={styles.featureItemText}>Glass Polish + Air Freshener</Text>
+                        </View>
+                      </View>
+                      
+                      <View style={styles.viewDetailsContainer}>
+                        <TouchableOpacity 
+                          style={styles.viewDetailsButton}
+                          onPress={() => handlePlanPress(service)}
+                          activeOpacity={0.8}
+                        >
+                          <Text style={styles.viewDetailsText}>View Details</Text>
+                          <Ionicons name="chevron-forward" size={16} color="#1453b4" />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                    
+                    <View style={styles.planCardRight}>
+                      <View style={styles.imageContainer}>
+                        <ImageBackground
+                          source={resolveImageSource(service.imageURL)}
+                          style={styles.serviceImage}
+                          imageStyle={styles.serviceImageRadius}
+                        >
+                          <View style={styles.timeOverlay}>
+                            <Ionicons name="time" size={14} color="#FFFFFF" />
+                            <Text style={styles.timeText}>{service.duration || '--'} mins</Text>
+                          </View>
+                        </ImageBackground>
+                      </View>
+                      
+                      <Text style={styles.oneTimeText}>{formatFrequency(service.frequency)}</Text>
+                      
+                      <View style={styles.ratingContainer}>
+                        {[1, 2, 3, 4].map((star) => (
+                          <Ionicons 
+                            key={star} 
+                            name="star" 
+                            size={14} 
+                            color="#FFC107" 
+                          />
+                        ))}
+                        <Ionicons 
+                          name="star-half" 
+                          size={14} 
+                          color="#FFC107" 
+                        />
+                        <Text style={styles.ratingValue}>4.5</Text>
+                      </View>
+                      
+                      <TouchableOpacity 
+                        style={styles.bookNowButton}
+                        onPress={() => handleBookNow(service)}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={styles.bookNowText}>Book Now</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                  <LinearGradient
+                    colors={[ '#0F3D8F', '#1D6BE0', 'rgba(255,255,255,0.95)' ]}
+                    start={{ x: 0, y: 0.5 }}
+                    end={{ x: 1, y: 0.5 }}
+                    style={styles.freebieBannerAttached}
+                  >
+                    <View style={styles.freebieTextBlock}>
+                      <Text style={styles.freebieTitle}>Get Free Air Freshener</Text>
+                      <Text style={styles.freebieSubtitle}>With Every Subscription Plan</Text>
+                    </View>
+                    <View style={styles.freebieIconCircle}>
+                      <Ionicons name="leaf" size={22} color="#FFFFFF" />
+                    </View>
+                  </LinearGradient>
+                </View>
+              ))
+            )}
+
+          </View>
+          <View style={{ height: 40 }} />
+      </ScrollView>
+
+      {/* Service Details Modal */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={modalVisible}
+        onRequestClose={closeModal}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            {/* Video Header */}
+              <View style={styles.modalHeader}>
+              <Video
+                source={require('../../assets/Backgound_video.mp4')}
+                style={styles.modalVideo}
+                resizeMode="cover"
+                shouldPlay
+                isLooping
+                isMuted
+                rate={1.0}
+                useNativeControls={false}
+              />
+              <View style={styles.videoOverlayBadges}>
+                <View style={styles.videoOverlayBadge}>
+                  <Text style={styles.videoOverlayText}>{selectedService?.duration || '--'} mins</Text>
+                </View>
+                <View style={styles.videoOverlayBadge}>
+                  <Text style={styles.videoOverlayText}>{formatFrequency(selectedService?.frequency)}</Text>
+                </View>
+              </View>
+              <TouchableOpacity style={styles.closeButton} onPress={closeModal}>
+                <Ionicons name="close-circle" size={32} color="#FFFFFF" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Modal Body with Service Details */}
+            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false} contentContainerStyle={styles.modalBodyContent}>
+              {/* Service Name and Info Icons */}
+              <View style={styles.cleanPricingSection}>
+                <Text style={styles.serviceTitleModal}>{selectedService?.name}</Text>
+                
+                {/* Icon Row */}
+                <View style={styles.iconInfoRow}>
+                  <View style={styles.iconInfoItem}>
+                    <Ionicons name="time-outline" size={20} color="#1453b4" />
+                    <Text style={styles.iconInfoText}>{selectedService?.duration || '--'} mins</Text>
+                  </View>
+                  <View style={styles.iconInfoItem}>
+                    <Ionicons name="repeat-outline" size={20} color="#1453b4" />
+                    <Text style={styles.iconInfoText}>{formatFrequency(selectedService?.frequency)}</Text>
+                  </View>
+                  <View style={styles.iconInfoItem}>
+                    <Ionicons name="car-outline" size={20} color="#1453b4" />
+                    <Text style={styles.iconInfoText}>All car types</Text>
+                  </View>
+                </View>
+
+                {/* Price */}
+                <View style={styles.priceSection}>
+                  <Text style={styles.currentPrice}>₹{selectedService?.price || 0}</Text>
+                  <Text style={styles.pricePerMonthLabel}>per month</Text>
+                  <Text style={styles.pricePerWashSmall}>₹{calculatePricePerWash(selectedService)}/wash</Text>
+                </View>
+              </View>
+
+              {/* About this service */}
+              <View style={styles.aboutServiceSection}>
+                <Text style={styles.aboutServiceTitle}>About this service</Text>
+                <View style={styles.aboutServiceItem}>
+                  <View style={styles.blueLeftBorder} />
+                  <Ionicons name="checkmark-circle" size={20} color="#1453b4" />
+                  <Text style={styles.aboutServiceText}>Exterior Foam Wash</Text>
+                </View>
+                <View style={styles.aboutServiceItem}>
+                  <View style={styles.blueLeftBorder} />
+                  <Ionicons name="checkmark-circle" size={20} color="#1453b4" />
+                  <Text style={styles.aboutServiceText}>Interior Vacuum Cleaning</Text>
+                </View>
+                <View style={styles.aboutServiceItem}>
+                  <View style={styles.blueLeftBorder} />
+                  <Ionicons name="checkmark-circle" size={20} color="#1453b4" />
+                  <Text style={styles.aboutServiceText}>Dashboard Polish</Text>
+                </View>
+                <View style={styles.aboutServiceItem}>
+                  <View style={styles.blueLeftBorder} />
+                  <Ionicons name="checkmark-circle" size={20} color="#1453b4" />
+                  <Text style={styles.aboutServiceText}>Tyre Polish</Text>
+                </View>
+                <View style={styles.aboutServiceItem}>
+                  <View style={styles.blueLeftBorder} />
+                  <Ionicons name="checkmark-circle" size={20} color="#1453b4" />
+                  <Text style={styles.aboutServiceText}>Glass Polish</Text>
+                </View>
+                <View style={styles.aboutServiceItem}>
+                  <View style={styles.blueLeftBorder} />
+                  <Ionicons name="checkmark-circle" size={20} color="#1453b4" />
+                  <Text style={styles.aboutServiceText}>Air Freshener</Text>
+                </View>
+                {selectedService?.features && selectedService.features.map((feature, index) => (
+                  <View key={index} style={styles.aboutServiceItem}>
+                    <View style={styles.blueLeftBorder} />
+                    <Ionicons name="checkmark-circle" size={20} color="#1453b4" />
+                    <Text style={styles.aboutServiceText}>{feature}</Text>
+                  </View>
+                ))}
+              </View>
+
+              {/* Free Air Freshener Section */}
+              <View style={styles.freeGiftSection}>
+                <View style={styles.freeGiftContent}>
+                  <View style={styles.freeGiftIconContainer}>
+                    <Ionicons name="leaf" size={20} color="#10B981" />
+                  </View>
+                  <Text style={styles.freeAirFreshenerText}>Get free air freshener with every subscription plan</Text>
+                </View>
+              </View>
+            </ScrollView>
+            
+            {/* Fixed Bottom Button */}
+            <View style={styles.modalFooter}>
+              <TouchableOpacity style={styles.subscribeButton} onPress={handleSubscribeNow}>
+                <Text style={styles.subscribeButtonText}>Book Now</Text>
+                <Ionicons name="arrow-forward-circle" size={24} color="#FFFFFF" />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#F7F9FC'
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F7F9FC'
+  },
+  loadingText: {
+    marginTop: 12,
+    color: '#6C757D'
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 50,
+    paddingBottom: 16,
+    paddingHorizontal: 20,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB'
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1F2933'
+  },
+  scrollView: {
+    flex: 1
+  },
+  heroCard: {
+    marginHorizontal: 0,
+    marginTop: 0,
+    marginBottom: 20,
+    borderRadius: 0,
+    overflow: 'hidden',
+    height: 260,
+    backgroundColor: '#000'
+  },
+  horizontalScrollView: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+  },
+  heroImage: {
+    width: Dimensions.get('window').width,
+    height: '100%',
+  },
+  indicatorContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'absolute',
+    bottom: 12,
+    left: 0,
+    right: 0,
+    gap: 6,
+  },
+  indicatorDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.4)',
+  },
+  activeIndicatorDot: {
+    backgroundColor: '#FFFFFF',
+    width: 18,
+  },
+  heroOverlay: {
+    position: 'absolute',
+    inset: 0,
+    padding: 20,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.1)'
+  },
+  heroEyebrow: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: 6
+  },
+  heroTitle: {
+    color: '#FFFFFF',
+    fontSize: 24,
+    fontWeight: '700',
+    marginBottom: 4
+  },
+  heroSubtitle: {
+    color: 'rgba(255, 255, 255, 0.9)',
+    fontSize: 14,
+    lineHeight: 20
+  },
+  airFreshenerBanner: {
+    backgroundColor: '#FFFFFF',
+    marginHorizontal: 0,
+    marginVertical: 16,
+    borderRadius: 0,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    shadowColor: '#1453b4',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  bannerTextContainer: {
+    flex: 1,
+  },
+  airFreshenerText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1453b4',
+    marginBottom: 2,
+  },
+  airFreshenerSubText: {
+    fontSize: 14,
+    color: '#4B5563',
+  },
+  leafIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#1453b4',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  selectionHeader: {
+    marginBottom: 20
+  },
+  selectionTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#1F2937',
+    marginBottom: 6,
+    textAlign: 'center'
+  },
+  selectionSubtitle: {
+    fontSize: 14,
+    color: '#6B7280',
+    textAlign: 'center',
+    lineHeight: 20
+  },
+  vehicleTiles: {
+    paddingHorizontal: 8,
+    paddingTop: 0,
+    paddingBottom: 4,
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 0,
+  },
+  featuredCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    flex: 1,
+    shadowColor: '#1453b4',
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+    borderWidth: 0,
+    borderColor: 'transparent',
+    minHeight: 140,
+  },
+  featuredBadgePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    gap: 6,
+    marginBottom: 12,
+  },
+  featuredBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+  },
+  featuredTextBlock: {
+    marginBottom: 12,
+  },
+  featuredTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  featuredSubtitle: {
+    fontSize: 12,
+    color: '#4B5563',
+    marginTop: 4,
+  },
+  featuredDescription: {
+    fontSize: 11,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  featuredImage: {
+    width: '100%',
+    height: 75,
+    borderRadius: 8,
+  },
+  featuredImageRadius: {
+    borderRadius: 8,
+  },
+  cardArrowContainer: {
+    position: 'absolute',
+    bottom: 8,
+    right: 8,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(20, 83, 180, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  vehicleTile: {
+    flex: 1,
+    borderRadius: 16,
+    overflow: 'hidden',
+    height: 180,
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  vehicleTileImage: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+  },
+  vehicleTileOverlay: {
+    flex: 1,
+    padding: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.3)'
+  },
+  vehicleIconContainer: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12
+  },
+  vehicleTileContent: {
+    alignItems: 'center',
+  },
+  vehicleTileTitle: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 2
+  },
+  vehicleTileSubtitle: {
+    color: 'rgba(255, 255, 255, 0.9)',
+    fontSize: 14,
+    fontWeight: '500'
+  },
+  heroSection: {
+    marginHorizontal: 0,
+    marginBottom: 16,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB'
+  },
+  heroBanner: {
+    width: WINDOW_WIDTH,
+    aspectRatio: HERO_ASPECT_RATIO,
+    borderRadius: 0,
+    overflow: 'hidden',
+    backgroundColor: '#000',
+  },
+  heroBannerImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 0,
+    resizeMode: 'cover',
+    alignSelf: 'center'
+  },
+  heroSlide: {
+    width: WINDOW_WIDTH,
+    aspectRatio: HERO_ASPECT_RATIO,
+    position: 'relative'
+  },
+  heroIndicatorRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 12,
+    marginBottom: 8,
+    gap: 6
+  },
+  heroDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: 'rgba(20,83,180,0.3)'
+  },
+  heroDotActive: {
+    width: 20,
+    backgroundColor: '#1453b4'
+  },
+  heroBannerContent: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 24,
+    paddingVertical: 20,
+  },
+  heroGradientCard: {
+    width: '100%',
+    borderRadius: 20,
+    paddingVertical: 18,
+    paddingHorizontal: 20,
+    shadowColor: '#1453b4',
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  heroBannerTitle: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '700',
+    textAlign: 'center'
+  },
+  heroBannerSubtitle: {
+    color: 'rgba(255,255,255,0.95)',
+    marginTop: 4,
+    fontSize: 12,
+    textAlign: 'center'
+  },
+  serviceCardContainer: {
+    marginBottom: 0,
+    borderRadius: 18,
+    overflow: 'visible',
+    backgroundColor: 'transparent',
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  freebieBanner: {
+    marginTop: 12,
+    marginBottom: 20,
+    alignSelf: 'center',
+    width: '92%',
+    borderRadius: 18,
+    paddingVertical: 18,
+    paddingHorizontal: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    shadowColor: '#1453b4',
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  freebieBannerAttached: {
+    marginTop: 0,
+    marginBottom: 0,
+    width: '100%',
+    borderTopWidth: 0,
+    borderBottomLeftRadius: 16,
+    borderBottomRightRadius: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  freebieTextBlock: {
+    flex: 1,
+    marginRight: 16,
+  },
+  freebieTitle: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  freebieSubtitle: {
+    color: 'rgba(255,255,255,0.9)',
+    fontSize: 13,
+  },
+  freebieIconCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  section: {
+    marginHorizontal: 16,
+    marginTop: 20
+  },
+  selectorContainer: {
+    marginHorizontal: 16,
+    marginTop: 24
+  },
+  selectorHeading: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1F2933',
+    marginBottom: 16
+  },
+  selectorGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 16
+  },
+  vehicleTile: {
+    flex: 1,
+    borderRadius: 18,
+    overflow: 'hidden',
+    aspectRatio: 1.55,
+    backgroundColor: '#fff',
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 3
+  },
+  vehicleTileImage: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+    justifyContent: 'flex-end'
+  },
+  vehicleTileImageStyle: {
+    borderRadius: 18
+  },
+  vehicleTileOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    padding: 14,
+    justifyContent: 'flex-end'
+  },
+  vehicleTileTitle: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700'
+  },
+  vehicleTileSubtitle: {
+    color: '#E5E7EB',
+    fontSize: 12,
+    marginTop: 4
+  },
+  bookingInfoCard: {
+    marginHorizontal: 0,
+    marginTop: 0,
+    marginBottom: 0,
+    backgroundColor: '#fff',
+    borderRadius: 0,
+    paddingHorizontal: 20,
+    paddingVertical: 22,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    elevation: 0,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: '#e0e7ff'
+  },
+  bookingInfoTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#0f172a',
+    marginBottom: 8
+  },
+  bookingInfoBody: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: '#475569'
+  },
+  whyChooseSection: {
+    marginHorizontal: 16,
+    marginTop: 24,
+    marginBottom: 16
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#212529',
+    marginBottom: 16
+  },
+  featureCard: {
+    flexDirection: 'row',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    alignItems: 'center',
+  },
+  featureIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#E7F3FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  featureContent: {
+    flex: 1,
+  },
+  featureTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#212529',
+    marginBottom: 4,
+  },
+  featureText: {
+    fontSize: 14,
+    color: '#6C757D',
+    lineHeight: 20,
+  },
+  howItWorksSection: {
+    padding: 16,
+    backgroundColor: '#F0F8FF',
+    marginTop: 8,
+  },
+  stepCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  stepNumber: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#1453b4',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  stepNumberText: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
+  stepText: {
+    flex: 1,
+    fontSize: 16,
+    color: '#212529',
+    fontWeight: '500',
+  },
+  atDoorBadge: {
+    flexDirection: 'row',
+    backgroundColor: '#28A745',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 25,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+    alignSelf: 'center',
+  },
+  atDoorText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    marginLeft: 8,
+  },
+  specialOfferBanner: {
+    backgroundColor: '#FF6B35',
+    marginHorizontal: 16,
+    marginTop: 16,
+    marginBottom: 12,
+    borderRadius: 16,
+    padding: 20,
+    alignItems: 'center',
+    shadowColor: '#FF6B35',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  offerBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    marginBottom: 12,
+  },
+  offerText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 1,
+    marginLeft: 6,
+  },
+  offerTitle: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    marginBottom: 4,
+  },
+  offerSubtitle: {
+    fontSize: 16,
+    color: 'rgba(255, 255, 255, 0.9)',
+    marginBottom: 12,
+  },
+  offerDivider: {
+    width: 40,
+    height: 3,
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    borderRadius: 2,
+    marginVertical: 8,
+  },
+  offerNote: {
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontStyle: 'italic',
+  },
+  enhancedSection: {
+    marginHorizontal: 16,
+    marginTop: 4,
+  },
+  enhancedSectionTitle: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#1453b4',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  enhancedPlanCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    marginBottom: 20,
+    shadowColor: '#1453b4',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 6,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#E7F3FF',
+  },
+  planContent: {
+    flex: 1,
+  },
+  priceSection: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 16,
+  },
+  discountedPrice: {
+    flex: 1,
+  },
+  discountBadge: {
+    backgroundColor: '#10B981',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    alignSelf: 'flex-start',
+    marginTop: 4,
+  },
+  discountBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  frequencyChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E7F3FF',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  frequencyText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#000000',
+    marginLeft: 6,
+  },
+  benefitsSection: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F0F8FF',
+  },
+  benefitItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  benefitText: {
+    fontSize: 13,
+    color: '#4B5563',
+    fontWeight: '500',
+    marginLeft: 6,
+  },
+  cardFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F0F8FF',
+  },
+  actionText: {
+    fontSize: 15,
+    color: '#1453b4',
+    fontWeight: '600',
+  },
+  heroBanner: {
+    height: 220,
+    marginHorizontal: 0,
+    marginBottom: 20,
+    borderRadius: 0,
+    overflow: 'hidden',
+    width: '100%',
+  },
+  bannerInfo: {
+    padding: 18,
+    backgroundColor: 'rgba(0,0,0,0.35)'
+  },
+  bannerTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#FFFFFF'
+  },
+  bannerSubtitle: {
+    fontSize: 14,
+    color: '#E5E7EB',
+    marginTop: 4
+  },
+  emptyState: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#E5E7EB'
+  },
+  emptyStateText: {
+    marginTop: 8,
+    color: '#6C757D',
+    textAlign: 'center'
+  },
+  planCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#EEF2F7',
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    elevation: 3,
+    overflow: 'hidden'
+  },
+  planImage: {
+    height: 170,
+    width: '100%'
+  },
+  planImageRadius: {
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18
+  },
+  planImageOverlay: {
+    flex: 1,
+    padding: 18,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.35)'
+  },
+  planBadgeRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12
+  },
+  vehicleBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
+    gap: 6
+  },
+  vehicleBadgeText: {
+    color: '#bfdbfe',
+    fontWeight: '600',
+    fontSize: 12
+  },
+  durationBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(15, 15, 15, 0.4)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
+    gap: 6
+  },
+  durationBadgeText: {
+    color: '#bfdbfe',
+    fontWeight: '500',
+    fontSize: 12
+  },
+  planName: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#FFFFFF'
+  },
+  planDescription: {
+    fontSize: 13,
+    color: '#F3F4F6',
+    marginTop: 6
+  },
+  planBody: {
+    padding: 18
+  },
+  priceRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center'
+  },
+  priceLabel: {
+    fontSize: 12,
+    color: '#6B7280'
+  },
+  priceValue: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#111827'
+  },
+  priceSuffix: {
+    fontSize: 13,
+    color: '#6B7280',
+    fontWeight: '400'
+  },
+  frequencyChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F3F4F6',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    gap: 6
+  },
+  frequencyText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#bfdbfe'
+  },
+  featuresContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 18
+  },
+  featurePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F9FAFB',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    gap: 6
+  },
+  featureText: {
+    fontSize: 12,
+    color: '#000000ff'
+  },
+  cardFooter: {
+    marginTop: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between'
+  },
+  tapHint: {
+    fontSize: 13,
+    color: '#6B7280'
+  },
+  // New Plan Card Styles
+  newPlanCard: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+    marginBottom: 0,
+    flexDirection: 'row',
+    shadowColor: '#1453b4',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 6,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#E7F3FF',
+    borderBottomWidth: 0,
+    minHeight: 400,
+    maxHeight: 440,
+  },
+  planCardLeft: {
+    flex: 1.2,
+    padding: 20,
+    justifyContent: 'flex-start',
+  },
+  planCardRight: {
+    flex: 1,
+    position: 'relative',
+    alignItems: 'center',
+    paddingTop: 20,
+  },
+  serviceName: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1F2937',
+    marginBottom: 4,
+  },
+  pricePerWash: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#000000',
+    marginBottom: 4,
+  },
+  washFrequency: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginBottom: 16,
+  },
+  typesOfServicesLabel: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#374151',
+    marginBottom: 12,
+  },
+  featuresList: {
+    marginBottom: 12,
+    marginTop: 8,
+  },
+  featureItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    minHeight: 24,
+  },
+  featureItemText: {
+    fontSize: 14,
+    color: '#374151',
+    marginLeft: 8,
+    flexShrink: 1,
+    lineHeight: 20,
+    flexWrap: 'wrap',
+    fontWeight: '600',
+    marginTop: 0,
+  },
+  viewDetailsContainer: {
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  viewDetailsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0F7FF',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 6,
+    justifyContent: 'center',
+    alignSelf: 'flex-start',
+    minWidth: 120,
+  },
+  viewDetailsText: {
+    color: '#1453b4',
+    fontSize: 13,
+    fontWeight: '600',
+    marginRight: 6,
+  },
+  imageContainer: {
+    height: 120,
+    width: 120,
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginBottom: 12,
+  },
+  serviceImage: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  serviceImageRadius: {
+    borderRadius: 12,
+  },
+  timeOverlay: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  timeText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+    marginLeft: 4,
+  },
+  oneTimeText: {
+    fontSize: 14,
+    color: '#000000',
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  ratingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  ratingStars: {
+    fontSize: 14,
+    marginRight: 4,
+  },
+  ratingValue: {
+    fontSize: 14,
+    color: '#374151',
+    fontWeight: '500',
+  },
+  viewDetailsRightButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'transparent',
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+    borderRadius: 0,
+    alignSelf: 'center',
+    marginBottom: 8,
+  },
+  viewDetailsRightText: {
+    color: '#1453b4',
+    fontSize: 14,
+    fontWeight: '600',
+    marginRight: 8,
+  },
+  bookNowButton: {
+    backgroundColor: '#000000',
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    borderRadius: 25,
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginTop: 70,
+    marginBottom: 20,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 4,
+    minWidth: 120,
+  },
+  bookNowText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  // Modal Styles
+  modalOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  modalContent: {
+    width: Dimensions.get('window').width * 0.98,
+    height: Dimensions.get('window').height * 0.80,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  modalHeader: {
+    height: 200,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  modalVideo: {
+    width: '100%',
+    height: '100%',
+  },
+  closeButton: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
+    zIndex: 10,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    borderRadius: 20,
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalBody: {
+    flex: 1,
+    backgroundColor: '#F8F9FA',
+  },
+  modalBodyContent: {
+    padding: 20,
+    paddingBottom: 100,
+  },
+  modalSection: {
+    marginBottom: 24,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 16,
+  },
+  modalSectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1F2937',
+  },
+  modalDescription: {
+    fontSize: 15,
+    lineHeight: 24,
+    color: '#6B7280',
+    backgroundColor: '#FFFFFF',
+    padding: 16,
+    borderRadius: 12,
+  },
+  pricingCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 20,
+    shadowColor: '#1453b4',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  pricingCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 16,
+  },
+  pricingCardTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1F2937',
+  },
+  pricingCardBody: {
+    alignItems: 'center',
+  },
+  modalPrice: {
+    fontSize: 40,
+    fontWeight: '800',
+    color: '#1453b4',
+    marginBottom: 4,
+  },
+  pricePeriod: {
+    fontSize: 14,
+    color: '#6B7280',
+    fontWeight: '500',
+    marginBottom: 8,
+  },
+  pricePerWashDetail: {
+    fontSize: 13,
+    color: '#10B981',
+    fontWeight: '600',
+  },
+  detailsGrid: {
+    gap: 12,
+  },
+  detailItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    padding: 16,
+    borderRadius: 12,
+    gap: 12,
+  },
+  detailTextContainer: {
+    flex: 1,
+  },
+  detailLabel: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginBottom: 4,
+  },
+  detailValue: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1F2937',
+  },
+  featuresList: {
+    gap: 12,
+  },
+  modernFeatureItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    padding: 16,
+    borderRadius: 12,
+    gap: 12,
+  },
+  featureIconCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#EFF6FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  featureTextContainer: {
+    flex: 1,
+  },
+  featureTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1F2937',
+  },
+  benefitsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  benefitCard: {
+    flex: 1,
+    minWidth: '45%',
+    backgroundColor: '#FFFFFF',
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    gap: 8,
+  },
+  benefitCardText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#1F2937',
+    textAlign: 'center',
+  },
+  modalFooter: {
+    backgroundColor: '#FFFFFF',
+    padding: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+  },
+  subscribeButton: {
+    flexDirection: 'row',
+    backgroundColor: '#1453b4',
+    paddingHorizontal: 32,
+    paddingVertical: 18,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    shadowColor: '#1453b4',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  subscribeButtonText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  serviceCardSpacing: {
+    marginBottom: 20,
+  },
+  // Video Overlay Badges
+  videoOverlayBadges: {
+    position: 'absolute',
+    bottom: 16,
+    left: 16,
+    flexDirection: 'row',
+    gap: 8,
+  },
+  videoOverlayBadge: {
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  videoOverlayText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  // Clean Modal Styles
+  cleanPricingSection: {
+    marginBottom: 24,
+    paddingBottom: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  serviceTitleModal: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#1F2937',
+    marginBottom: 16,
+  },
+  iconInfoRow: {
+    flexDirection: 'row',
+    gap: 24,
+    marginBottom: 20,
+  },
+  iconInfoItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  iconInfoText: {
+    fontSize: 13,
+    color: '#6B7280',
+    fontWeight: '500',
+  },
+  priceSection: {
+    marginTop: 12,
+  },
+  pricePerMonthLabel: {
+    fontSize: 13,
+    color: '#6B7280',
+    fontWeight: '500',
+    marginBottom: 8,
+  },
+  pricePerWashSmall: {
+    fontSize: 13,
+    color: '#9CA3AF',
+    fontWeight: '500',
+  },
+  currentPrice: {
+    fontSize: 36,
+    fontWeight: '800',
+    color: '#1453b4',
+  },
+  originalPrice: {
+    fontSize: 18,
+    fontWeight: '500',
+    color: '#9CA3AF',
+    textDecorationLine: 'line-through',
+  },
+  discountBadgeRed: {
+    backgroundColor: '#DC2626',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  discountBadgeRedText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  gstIncludedText: {
+    fontSize: 13,
+    color: '#6B7280',
+    fontWeight: '500',
+  },
+  aboutServiceSection: {
+    marginBottom: 24,
+  },
+  aboutServiceTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1F2937',
+    marginBottom: 16,
+  },
+  aboutServiceItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 12,
+    paddingLeft: 16,
+    backgroundColor: '#FFFFFF',
+    marginBottom: 8,
+    borderRadius: 8,
+  },
+  blueLeftBorder: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 4,
+    backgroundColor: '#1453b4',
+    borderTopLeftRadius: 8,
+    borderBottomLeftRadius: 8,
+  },
+  aboutServiceText: {
+    fontSize: 14,
+    color: '#374151',
+    fontWeight: '500',
+    flex: 1,
+  },
+  freeGiftSection: {
+    backgroundColor: '#D1FAE5',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+    borderLeftWidth: 3,
+    borderLeftColor: '#10B981',
+  },
+  freeGiftContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  freeGiftIconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  freeAirFreshenerText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#065F46',
+    flex: 1,
+  },
+});
