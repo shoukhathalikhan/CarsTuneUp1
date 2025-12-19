@@ -10,6 +10,9 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useCart } from '../context/CartContext';
+import { useApp } from '../context/AppContext';
+import api from '../config/api';
+import { wp, hp, rfs, getStatusBarHeight, getBottomSpace, spacing } from '../utils/responsive';
 
 const formatCurrency = (amount) => {
   const numeric = Number(amount || 0);
@@ -64,25 +67,46 @@ export default function PaymentScreen({ navigation, route }) {
       return;
     }
 
+    if (!cartItem || !cartItem.serviceId) {
+      Alert.alert('Error', 'Service information is missing. Please try again.');
+      return;
+    }
+
     setIsProcessing(true);
     try {
+      // Simulate payment processing
       await new Promise(resolve => setTimeout(resolve, 2000));
 
+      // Generate payment ID
+      const paymentId = `PAY_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+      // Create subscription after successful payment
+      const response = await api.post('/subscriptions', {
+        serviceId: cartItem.serviceId,
+        paymentId: paymentId
+      });
+
+      // Clear cart after successful subscription creation
+      clearCart();
+
       Alert.alert(
-        'Payment Successful',
-        'Your order has been placed successfully. Your service will be scheduled soon.',
+        'Subscription Created Successfully',
+        'Your subscription has been created with "Pending" status. Our admin team will review and assign an employee to you shortly.',
         [
           {
-            text: 'View Orders',
+            text: 'View Subscriptions',
             onPress: () => {
-              clearCart();
               navigation.navigate('MainTabs', { screen: 'Subscriptions' });
             }
           }
         ]
       );
     } catch (error) {
-      Alert.alert('Payment Failed', 'Please try again or use a different payment method.');
+      console.error('Payment/Subscription error:', error);
+      Alert.alert(
+        'Error',
+        error.response?.data?.message || 'Failed to create subscription. Please try again.'
+      );
     } finally {
       setIsProcessing(false);
     }
@@ -430,8 +454,9 @@ const styles = StyleSheet.create({
   },
   footer: {
     backgroundColor: '#fff',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.md + getBottomSpace(),
     borderTopWidth: 1,
     borderTopColor: '#E5E7EB',
   },

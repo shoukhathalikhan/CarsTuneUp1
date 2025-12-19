@@ -8,6 +8,7 @@ import {
   ScrollView,
   Alert,
   ActivityIndicator,
+  StatusBar,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
@@ -15,6 +16,7 @@ import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import api from '../config/api';
 import { useApp } from '../context/AppContext';
 import { useCart } from '../context/CartContext';
+import { wp, hp, rfs, getStatusBarHeight, getBottomSpace, spacing } from '../utils/responsive';
 
 export default function LocationAdditionScreen({ navigation, route }) {
   const { fromCart = false, fromOrderReview = false } = route.params || {};
@@ -208,6 +210,7 @@ export default function LocationAdditionScreen({ navigation, route }) {
 
   return (
     <View style={styles.container}>
+      <StatusBar translucent backgroundColor="transparent" barStyle="dark-content" />
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={24} color="#1453b4" />
@@ -352,9 +355,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    paddingTop: 50,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    paddingTop: (StatusBar.currentHeight || 0) + spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
   },
@@ -478,8 +481,9 @@ const styles = StyleSheet.create({
   },
   footer: {
     backgroundColor: '#fff',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.md + getBottomSpace(),
     borderTopWidth: 1,
     borderTopColor: '#E5E7EB',
   },

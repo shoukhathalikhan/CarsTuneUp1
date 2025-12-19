@@ -107,6 +107,7 @@ export default function RegisterScreen({ navigation }) {
             <TextInput
               style={styles.input}
               placeholder="Full Name"
+              placeholderTextColor="#999"
               value={formData.name}
               onChangeText={(value) => handleChange('name', value)}
               autoCapitalize="words"
@@ -115,6 +116,7 @@ export default function RegisterScreen({ navigation }) {
             <TextInput
               style={styles.input}
               placeholder="Email"
+              placeholderTextColor="#999"
               value={formData.email}
               onChangeText={(value) => handleChange('email', value)}
               keyboardType="email-address"
@@ -125,6 +127,7 @@ export default function RegisterScreen({ navigation }) {
             <TextInput
               style={styles.input}
               placeholder="Phone Number"
+              placeholderTextColor="#999"
               value={formData.phone}
               onChangeText={(value) => handleChange('phone', value)}
               keyboardType="phone-pad"
@@ -133,6 +136,7 @@ export default function RegisterScreen({ navigation }) {
             <TextInput
               style={styles.input}
               placeholder="Password"
+              placeholderTextColor="#999"
               value={formData.password}
               onChangeText={(value) => handleChange('password', value)}
               secureTextEntry
@@ -142,6 +146,7 @@ export default function RegisterScreen({ navigation }) {
             <TextInput
               style={styles.input}
               placeholder="Confirm Password"
+              placeholderTextColor="#999"
               value={formData.confirmPassword}
               onChangeText={(value) => handleChange('confirmPassword', value)}
               secureTextEntry
@@ -229,6 +234,7 @@ const styles = StyleSheet.create({
     marginBottom: 15,
     borderWidth: 1,
     borderColor: '#e0e0e0',
+    color: '#000',
   },
   button: {
     backgroundColor: '#1453b4',

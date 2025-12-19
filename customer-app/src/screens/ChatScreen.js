@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View, Image } from 'react-native';
+import { ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View, Image, StatusBar } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { collection, onSnapshot, orderBy, query } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../config/api';
 import { db } from '../config/firebase';
+import { wp, hp, rfs, getStatusBarHeight, getBottomSpace, spacing } from '../utils/responsive';
 
 export default function ChatScreen() {
   const [loading, setLoading] = useState(true);
@@ -110,9 +111,10 @@ export default function ChatScreen() {
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={0}
     >
+      <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
       <View style={styles.header}>
         <View style={styles.headerLogoContainer}>
           <Image
@@ -132,6 +134,8 @@ export default function ChatScreen() {
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
         contentContainerStyle={styles.listContent}
+        onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+        onLayout={() => flatListRef.current?.scrollToEnd({ animated: true })}
       />
 
       <View style={styles.composer}>
@@ -142,6 +146,7 @@ export default function ChatScreen() {
           style={styles.input}
           placeholderTextColor="#94a3b8"
           multiline
+          maxLength={500}
         />
         <TouchableOpacity style={styles.sendButton} onPress={sendMessage} activeOpacity={0.9}>
           <Ionicons name="send" size={18} color="#fff" />
@@ -155,9 +160,9 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#EFF6FF' },
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#EFF6FF' },
   header: { 
-    paddingTop: 54, 
-    paddingHorizontal: 20, 
-    paddingBottom: 16, 
+    paddingTop: (StatusBar.currentHeight || 0) + spacing.md, 
+    paddingHorizontal: spacing.lg, 
+    paddingBottom: spacing.md, 
     backgroundColor: '#1453b4',
     shadowColor: '#1453b4',
     shadowOffset: { width: 0, height: 4 },
@@ -168,28 +173,28 @@ const styles = StyleSheet.create({
   headerLogoContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: spacing.md,
   },
   logoImage: {
-    width: 48,
-    height: 48,
+    width: wp(12),
+    height: wp(12),
     resizeMode: 'contain',
-    borderRadius: 8,
+    borderRadius: wp(2),
   },
   headerTextContainer: {
     flex: 1,
   },
-  headerTitle: { fontSize: 22, fontWeight: '800', color: '#FFFFFF' },
-  headerSubtitle: { marginTop: 6, fontSize: 14, color: '#DBEAFE', fontWeight: '500' },
-  listContent: { padding: 16, paddingBottom: 12 },
-  bubbleRow: { marginBottom: 12, flexDirection: 'row' },
+  headerTitle: { fontSize: rfs(20), fontWeight: '800', color: '#FFFFFF' },
+  headerSubtitle: { marginTop: spacing.xs, fontSize: rfs(13), color: '#DBEAFE', fontWeight: '500' },
+  listContent: { padding: spacing.md, paddingBottom: spacing.md },
+  bubbleRow: { marginBottom: spacing.md, flexDirection: 'row' },
   bubbleRowMine: { justifyContent: 'flex-end' },
   bubbleRowOther: { justifyContent: 'flex-start' },
   bubble: { 
     maxWidth: '80%', 
-    paddingVertical: 12, 
-    paddingHorizontal: 16, 
-    borderRadius: 18,
+    paddingVertical: spacing.md, 
+    paddingHorizontal: spacing.md, 
+    borderRadius: wp(4),
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -198,24 +203,25 @@ const styles = StyleSheet.create({
   },
   bubbleMine: { 
     backgroundColor: '#1453b4', 
-    borderTopRightRadius: 4,
+    borderTopRightRadius: wp(1),
     shadowColor: '#1453b4',
     shadowOpacity: 0.3,
   },
   bubbleOther: { 
     backgroundColor: '#FFFFFF', 
-    borderTopLeftRadius: 4,
+    borderTopLeftRadius: wp(1),
     shadowColor: '#000',
     shadowOpacity: 0.08,
   },
-  bubbleText: { fontSize: 15, lineHeight: 22, fontWeight: '500' },
+  bubbleText: { fontSize: rfs(14), lineHeight: rfs(20), fontWeight: '500' },
   bubbleTextMine: { color: '#FFFFFF' },
   bubbleTextOther: { color: '#1F2937' },
   composer: { 
     flexDirection: 'row', 
     alignItems: 'flex-end', 
-    paddingHorizontal: 16, 
-    paddingVertical: 12, 
+    paddingHorizontal: spacing.md, 
+    paddingTop: spacing.md, 
+    paddingBottom: spacing.sm,
     backgroundColor: '#FFFFFF',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -2 },
@@ -225,22 +231,22 @@ const styles = StyleSheet.create({
   },
   input: { 
     flex: 1, 
-    minHeight: 44, 
-    maxHeight: 120, 
+    minHeight: hp(5.5), 
+    maxHeight: hp(15), 
     backgroundColor: '#EFF6FF', 
-    borderRadius: 22, 
-    paddingHorizontal: 16, 
-    paddingVertical: 12, 
-    fontSize: 15, 
+    borderRadius: wp(5), 
+    paddingHorizontal: spacing.md, 
+    paddingVertical: spacing.sm, 
+    fontSize: rfs(14), 
     color: '#1F2937',
     borderWidth: 1,
     borderColor: '#DBEAFE',
   },
   sendButton: { 
-    marginLeft: 12, 
-    width: 48, 
-    height: 48, 
-    borderRadius: 24, 
+    marginLeft: spacing.md, 
+    width: wp(12), 
+    height: wp(12), 
+    borderRadius: wp(6), 
     backgroundColor: '#1453b4', 
     alignItems: 'center', 
     justifyContent: 'center',

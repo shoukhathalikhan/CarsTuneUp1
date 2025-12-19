@@ -6,10 +6,12 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { AppState, Platform } from 'react-native';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { registerForPushNotificationsAsync, setupNotificationListeners } from './src/services/notificationService';
 import { AppProvider } from './src/context/AppContext';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { CartProvider } from './src/context/CartContext';
+import { setSafeAreaInsets } from './src/utils/responsive';
 
 // Screens
 import HomeScreen from './src/screens/HomeScreen';
@@ -251,11 +253,25 @@ function AppContent() {
   );
 }
 
+// Wrapper to capture safe area insets
+function SafeAreaWrapper() {
+  const insets = useSafeAreaInsets();
+  
+  // Update the global safe area insets
+  useEffect(() => {
+    setSafeAreaInsets(insets);
+  }, [insets]);
+  
+  return <AppContent />;
+}
+
 export default function App() {
   return (
-    <AuthProvider>
-      <AppContent />
-    </AuthProvider>
+    <SafeAreaProvider>
+      <AuthProvider>
+        <SafeAreaWrapper />
+      </AuthProvider>
+    </SafeAreaProvider>
   );
 }
 

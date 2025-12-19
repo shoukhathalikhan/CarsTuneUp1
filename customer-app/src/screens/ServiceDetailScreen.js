@@ -20,6 +20,7 @@ import { Ionicons } from '@expo/vector-icons';
 import api from '../config/api';
 import { useApp } from '../context/AppContext';
 import { useCart } from '../context/CartContext';
+import { wp, hp, rfs, getStatusBarHeight, getBottomSpace, spacing } from '../utils/responsive';
 
 const FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=1080&h=720&fit=crop&crop=center';
 
@@ -1803,8 +1804,9 @@ const styles = StyleSheet.create({
   },
   footer: {
     backgroundColor: '#fff',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.md + getBottomSpace(),
     borderTopWidth: 1,
     borderTopColor: '#E5E7EB',
   },
@@ -2011,8 +2013,9 @@ const styles = StyleSheet.create({
     marginLeft: 12,
   },
   addOnsModalFooter: {
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.md + getBottomSpace(),
     borderTopWidth: 1,
     borderTopColor: '#F3F4F6',
     backgroundColor: '#FFFFFF',
@@ -2186,8 +2189,9 @@ const styles = StyleSheet.create({
     color: '#1453b4',
   },
   modalFooter: {
-    paddingHorizontal: 20,
-    paddingTop: 16,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: getBottomSpace(),
     borderTopWidth: 1,
     borderTopColor: '#E5E7EB',
   },

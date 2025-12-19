@@ -17,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { useApp } from '../context/AppContext';
 import api from '../config/api';
+import { wp, hp, rfs, getStatusBarHeight, getBottomSpace, spacing } from '../utils/responsive';
 
 const BRAND_LOGO = require('../../assets/logo.jpg');
 
@@ -690,14 +691,16 @@ const styles = StyleSheet.create({
     backgroundColor: '#1453b4'
   },
   footer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 18,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(15,31,75,0.08)',
-    backgroundColor: '#ffffff'
+    backgroundColor: '#fff',
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.md + getBottomSpace(),
+    borderRadius: 14,
+    shadowColor: '#1453b4',
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 5
   },
   footerInfo: {
     flex: 1,

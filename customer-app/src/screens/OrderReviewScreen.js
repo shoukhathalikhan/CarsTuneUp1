@@ -12,6 +12,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useCart } from '../context/CartContext';
 import { useApp } from '../context/AppContext';
+import { wp, hp, rfs, getStatusBarHeight, getBottomSpace, spacing } from '../utils/responsive';
 
 const formatCurrency = (amount) => {
   const numeric = Number(amount || 0);
@@ -445,8 +446,9 @@ const styles = StyleSheet.create({
   },
   footer: {
     backgroundColor: '#fff',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.md + getBottomSpace(),
     borderTopWidth: 1,
     borderTopColor: '#E5E7EB',
   },

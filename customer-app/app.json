@@ -1,0 +1,22 @@
+{
+  "expo": {
+    "name": "CarsTuneUp Customer",
+    "slug": "carstuneup-customer",
+    "android": {
+      "package": "com.carstuneup.customer",
+      "googleServicesFile": "./google-services.json",
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyArrDEz9QzOAj8-Jz8zePlT8or7C6wORwk"
+        },
+        "googleSignIn": {
+          "apiKey": "AIzaSyArrDEz9QzOAj8-Jz8zePlT8or7C6wORwk",
+          "certificateHash": "09:BA:58:0C:63:D1:B4:9E:86:85:C6:94:F0:0B:0F:62:2D:64:4A:2F"
+        }
+      }
+    },
+    "plugins": [
+      "@react-native-google-signin/google-signin"
+    ]
+  }
+}

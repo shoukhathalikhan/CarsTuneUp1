@@ -7,7 +7,6 @@
 build/
 .idea
 .gradle
-
 local.properties
 *.iml
 *.hprof
@@ -15,5 +14,3 @@ local.properties
 
 # Bundle artifacts
 *.jsbundle
-  
-

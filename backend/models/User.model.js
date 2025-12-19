@@ -116,6 +116,19 @@ const userSchema = new mongoose.Schema({
     type: String,
     default: null
   },
+  profilePicture: {
+    type: String,
+    default: null
+  },
+  googleId: {
+    type: String,
+    unique: true,
+    sparse: true
+  },
+  isEmailVerified: {
+    type: Boolean,
+    default: false
+  },
   refreshToken: {
     type: String,
     default: null

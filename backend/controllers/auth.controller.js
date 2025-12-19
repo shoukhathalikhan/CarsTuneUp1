@@ -1,6 +1,10 @@
 const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
+const { OAuth2Client } = require('google-auth-library');
 const User = require('../models/User.model');
 const Employee = require('../models/Employee.model');
+
+const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 // Generate JWT token
 const generateToken = (id) => {
@@ -248,6 +252,79 @@ exports.updateFCMToken = async (req, res) => {
     res.status(500).json({
       status: 'error',
       message: 'Error updating FCM token'
+    });
+  }
+};
+
+// @desc    Google login
+// @route   POST /api/auth/google-login
+// @access  Public
+exports.googleLogin = async (req, res) => {
+  try {
+    const { idToken, user: googleUser } = req.body;
+
+    // Verify Google token
+    const ticket = await client.verifyIdToken({
+      idToken: idToken,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+
+    const payload = ticket.getPayload();
+    const googleId = payload['sub'];
+    const email = payload['email'];
+    const name = payload['name'];
+    const picture = payload['picture'];
+
+    // Check if user exists
+    let user = await User.findOne({ email: email.toLowerCase() });
+
+    if (!user) {
+      // Create new user
+      user = await User.create({
+        name: name,
+        email: email.toLowerCase(),
+        password: await bcrypt.hash(Math.random().toString(36), 10), // Random password
+        role: 'customer',
+        googleId: googleId,
+        profilePicture: picture,
+        isEmailVerified: true, // Google emails are verified
+        isProfileSetupComplete: false, // User needs to complete profile
+      });
+    } else {
+      // Update Google ID if not set
+      if (!user.googleId) {
+        user.googleId = googleId;
+        user.isEmailVerified = true;
+        if (picture && !user.profilePicture) {
+          user.profilePicture = picture;
+        }
+        await user.save();
+      }
+    }
+
+    // Generate tokens
+    const token = generateToken(user._id);
+    const refreshToken = generateRefreshToken(user._id);
+    
+    // Store refresh token in database
+    user.refreshToken = refreshToken;
+    await user.save();
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Google login successful',
+      data: {
+        user: user.getPublicProfile(),
+        token,
+        refreshToken
+      },
+    });
+  } catch (error) {
+    console.error('Google login error:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'Google authentication failed',
+      error: error.message,
     });
   }
 };
