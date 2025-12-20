@@ -8,11 +8,16 @@ import {
   Alert,
   ActivityIndicator,
   Image,
+  Modal,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import { AuthContext } from '../context/AuthContext';
+import { useFocusEffect } from '@react-navigation/native';
 import api from '../config/api';
 
 export default function ProfileScreen({ navigation }) {
@@ -20,10 +25,19 @@ export default function ProfileScreen({ navigation }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [profileImage, setProfileImage] = useState(null);
+  const [showPhoneModal, setShowPhoneModal] = useState(false);
+  const [phoneInput, setPhoneInput] = useState('');
+  const [isSavingPhone, setIsSavingPhone] = useState(false);
 
   useEffect(() => {
     fetchUserData();
   }, []);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      fetchUserData();
+    }, [])
+  );
 
   const fetchUserData = async () => {
     try {
@@ -129,6 +143,43 @@ export default function ProfileScreen({ navigation }) {
     }
   };
 
+  const handleEditPhone = () => {
+    setPhoneInput(user?.phone || '');
+    setShowPhoneModal(true);
+  };
+
+  const handleSavePhone = async () => {
+    if (!phoneInput.trim()) {
+      Alert.alert('Error', 'Please enter a valid phone number');
+      return;
+    }
+
+    if (phoneInput.length < 10) {
+      Alert.alert('Error', 'Please enter a valid 10-digit phone number');
+      return;
+    }
+
+    setIsSavingPhone(true);
+    try {
+      const token = await AsyncStorage.getItem('userToken');
+      const response = await api.put('/users/profile', 
+        { phone: phoneInput },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      const updatedUser = response.data.data;
+      await AsyncStorage.setItem('userData', JSON.stringify(updatedUser));
+      setUser(updatedUser);
+      setShowPhoneModal(false);
+      Alert.alert('Success', 'Phone number updated successfully!');
+    } catch (error) {
+      console.error('Error saving phone:', error);
+      Alert.alert('Error', 'Failed to save phone number. Please try again.');
+    } finally {
+      setIsSavingPhone(false);
+    }
+  };
+
   const handleLogout = () => {
     Alert.alert(
       'Logout',
@@ -225,16 +276,19 @@ export default function ProfileScreen({ navigation }) {
           </TouchableOpacity>
 
           {/* Mobile */}
-          <TouchableOpacity style={styles.menuItem}>
+          <TouchableOpacity style={styles.menuItem} onPress={handleEditPhone}>
             <View style={styles.menuItemLeft}>
               <View style={styles.iconCircle}>
                 <Ionicons name="call-outline" size={24} color="#1453b4" />
               </View>
               <View style={styles.menuItemText}>
                 <Text style={styles.menuItemTitle}>Mobile</Text>
-                <Text style={styles.menuItemSubtitle}>{user?.phone || 'N/A'}</Text>
+                <Text style={[styles.menuItemSubtitle, !user?.phone && styles.naText]}>
+                  {user?.phone || 'N/A - Tap to add'}
+                </Text>
               </View>
             </View>
+            <Ionicons name="chevron-forward" size={24} color="#ccc" />
           </TouchableOpacity>
 
           {/* Address */}
@@ -371,6 +425,67 @@ export default function ProfileScreen({ navigation }) {
 
         <Text style={styles.version}>Version 1.0.0</Text>
       </ScrollView>
+
+      <Modal
+        visible={showPhoneModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowPhoneModal(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.phoneModalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>
+                {user?.phone ? 'Edit Phone Number' : 'Add Phone Number'}
+              </Text>
+              <TouchableOpacity onPress={() => setShowPhoneModal(false)}>
+                <Ionicons name="close" size={24} color="#1F2937" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.phoneModalSubtitle}>
+              Your phone number is required for service coordination and updates.
+            </Text>
+
+            {phoneInput.length > 0 && (
+              <View style={styles.phonePreviewContainer}>
+                <Text style={styles.phonePreviewLabel}>Phone Number:</Text>
+                <Text style={styles.phonePreviewText}>
+                  {phoneInput.length >= 10 
+                    ? `${phoneInput.slice(0, 5)} ${phoneInput.slice(5, 10)}`
+                    : phoneInput}
+                </Text>
+                {phoneInput.length === 10 && (
+                  <Ionicons name="checkmark-circle" size={20} color="#10B981" style={styles.checkIcon} />
+                )}
+              </View>
+            )}
+
+            <TextInput
+              style={styles.phoneInput}
+              placeholder="Enter 10-digit phone number"
+              placeholderTextColor="#9CA3AF"
+              value={phoneInput}
+              onChangeText={setPhoneInput}
+              keyboardType="phone-pad"
+              maxLength={10}
+              autoFocus
+            />
+
+            <TouchableOpacity
+              style={[styles.savePhoneButton, isSavingPhone && styles.buttonDisabled]}
+              onPress={handleSavePhone}
+              disabled={isSavingPhone}
+            >
+              {isSavingPhone ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.savePhoneButtonText}>Save Phone Number</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -517,5 +632,95 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 20,
     marginBottom: 30,
+  },
+  naText: {
+    color: '#EF4444',
+    fontWeight: '600',
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+  },
+  modalBackdropTouchable: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  phoneModalContent: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 30,
+    maxHeight: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1F2937',
+  },
+  phoneModalSubtitle: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginBottom: 20,
+    lineHeight: 20,
+  },
+  phonePreviewContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EFF6FF',
+    borderWidth: 2,
+    borderColor: '#3B82F6',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+  },
+  phonePreviewLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1F2937',
+    marginRight: 8,
+  },
+  phonePreviewText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1453b4',
+    letterSpacing: 1,
+    flex: 1,
+  },
+  checkIcon: {
+    marginLeft: 8,
+  },
+  phoneInput: {
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    padding: 16,
+    fontSize: 16,
+    color: '#1F2937',
+    marginBottom: 20,
+  },
+  savePhoneButton: {
+    backgroundColor: '#1453b4',
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  savePhoneButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  buttonDisabled: {
+    opacity: 0.6,
   },
 });

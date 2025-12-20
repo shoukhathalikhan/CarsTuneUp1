@@ -321,7 +321,7 @@ exports.getAllJobs = async (req, res) => {
           select: 'name email phone'
         }
       })
-      .populate('customerId', 'name email phone')
+      .populate('customerId', 'name email phone area address')
       .populate('serviceId')
       .sort({ scheduledDate: -1 });
     
@@ -352,7 +352,7 @@ exports.getJobById = async (req, res) => {
           select: 'name email phone'
         }
       })
-      .populate('customerId')
+      .populate('customerId', 'name email phone area address')
       .populate('serviceId')
       .populate('subscriptionId');
     
@@ -414,7 +414,7 @@ exports.getMyJobs = async (req, res) => {
     if (status) filter.status = status;
     
     const jobs = await Job.find(filter)
-      .populate('customerId', 'name phone address')
+      .populate('customerId', 'name phone address area')
       .populate('serviceId')
       .sort({ scheduledDate: -1 });
     
@@ -456,7 +456,7 @@ exports.getTodayJobs = async (req, res) => {
       scheduledDate: { $gte: today, $lt: tomorrow },
       status: { $in: ['scheduled', 'in-progress'] }
     })
-      .populate('customerId', 'name phone address')
+      .populate('customerId', 'name phone address area')
       .populate('serviceId')
       .sort({ scheduledDate: 1 });
     

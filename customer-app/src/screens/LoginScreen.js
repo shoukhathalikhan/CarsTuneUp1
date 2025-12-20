@@ -24,9 +24,9 @@ export default function LoginScreen({ navigation }) {
   const [googleLoading, setGoogleLoading] = useState(false);
 
   useEffect(() => {
-    // Configure Google Sign-In
     GoogleSignin.configure({
       webClientId: '139313575789-h0alijj4pbdod8tok98psi1sas63a9cd.apps.googleusercontent.com',
+      offlineAccess: true,
     });
   }, []);
 
@@ -94,28 +94,29 @@ export default function LoginScreen({ navigation }) {
   const handleGoogleSignIn = async () => {
     setGoogleLoading(true);
     try {
-      // Check if device supports Google Play Services
       await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
 
-      // Get user info from Google
+      await GoogleSignin.signOut();
+
       const userInfo = await GoogleSignin.signIn();
       
       console.log('Google userInfo:', userInfo);
 
-      const { idToken } = userInfo;
+      const idToken = userInfo.data?.idToken || userInfo.idToken;
 
       if (!idToken) {
         throw new Error('Google ID token missing');
       }
 
-      // Send Google token to your backend
+      const userData = userInfo.data?.user || userInfo.user;
+
       const response = await api.post('/auth/google-login', {
         idToken,
         user: {
-          email: userInfo.user.email,
-          name: userInfo.user.name,
-          photo: userInfo.user.photo,
-          googleId: userInfo.user.id,
+          email: userData.email,
+          name: userData.name,
+          photo: userData.photo,
+          googleId: userData.id,
         }
       });
 
@@ -204,14 +205,12 @@ export default function LoginScreen({ navigation }) {
             )}
           </TouchableOpacity>
 
-          {/* Divider */}
           <View style={styles.dividerContainer}>
             <View style={styles.divider} />
             <Text style={styles.dividerText}>OR</Text>
             <View style={styles.divider} />
           </View>
 
-          {/* Google Sign-In Button */}
           <TouchableOpacity
             style={styles.googleButton}
             onPress={handleGoogleSignIn}

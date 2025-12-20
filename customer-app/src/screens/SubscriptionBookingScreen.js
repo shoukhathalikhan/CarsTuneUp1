@@ -14,6 +14,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { sendLocalNotification } from '../services/notificationService';
 
 import { useApp } from '../context/AppContext';
 import api from '../config/api';
@@ -136,10 +137,21 @@ export default function SubscriptionBookingScreen({ navigation, route }) {
         paymentId: paymentId
       });
 
+      // Send immediate notification
+      await sendLocalNotification(
+        '🎉 Service Booked Successfully!',
+        `Your ${service?.name || 'service'} subscription has been created. We will send you the scheduled service dates very soon.`,
+        {
+          type: 'booking_confirmed',
+          serviceName: service?.name,
+          subscriptionId: response.data?.data?._id,
+        }
+      );
+
       Alert.alert(
-        'Subscription Created Successfully',
-        'Your subscription has been created with "Pending" status. Our admin team will review and assign an employee to you shortly.',
-        [{ text: 'Done', onPress: () => navigation.navigate('MainTabs', { screen: 'Subscriptions' }) }]
+        '🎉 Service Booked Successfully!',
+        `Thank you for booking with CarzTuneUp!\n\n✅ Your ${service?.name || 'service'} subscription has been created.\n\n📅 We will send you the scheduled service dates very soon.\n\n👨‍🔧 Our admin team is reviewing your booking and will assign a professional employee to you shortly.\n\nYou'll receive a notification once everything is confirmed!`,
+        [{ text: 'View My Subscriptions', onPress: () => navigation.navigate('MainTabs', { screen: 'Subscriptions' }) }]
       );
     } catch (error) {
       console.error('Error creating subscription:', error);

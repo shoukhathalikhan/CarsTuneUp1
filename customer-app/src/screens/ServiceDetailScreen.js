@@ -43,7 +43,7 @@ const FREQUENCY_TO_WASHES = {
 
 const WEBSITE_URL = 'https://www.carztuneup.com';
 const SUPPORT_NUMBER = '+917337718170';
-const MAPS_QUERY = 'CarsTuneUp Car Wash';
+const MAPS_QUERY = 'CarzTuneUp Car Wash';
 const MAPS_URL = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(MAPS_QUERY)}`;
 
 const TAB_ITEMS = [
@@ -348,7 +348,7 @@ export default function ServiceDetailScreen({ route, navigation }) {
   const handleDirections = () => handleOpenLink(MAPS_URL);
   const handleShareService = async () => {
     try {
-      const message = `Check out the ${service.name} plan from CarsTuneUp. ${WEBSITE_URL}`;
+      const message = `Check out the ${service.name} plan from CarzTuneUp. ${WEBSITE_URL}`;
       await Share.share({ message, url: WEBSITE_URL });
     } catch (shareError) {
       console.error('Share service error:', shareError);

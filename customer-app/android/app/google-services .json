@@ -14,11 +14,11 @@
       },
       "oauth_client": [
         {
-          "client_id": "139313575789-q79261mfnjkmrnp2edl1scpek7u45m8p.apps.googleusercontent.com",
+          "client_id": "139313575789-uv38pv8ikn849jgrgdrdf2h5s0qo7j51.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
             "package_name": "com.carstuneup.customer",
-            "certificate_hash": "09ba580c63d1b49e8685c694f00b0f622d644a2f"
+            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
           }
         },
         {
@@ -37,13 +37,6 @@
             {
               "client_id": "139313575789-h0alijj4pbdod8tok98psi1sas63a9cd.apps.googleusercontent.com",
               "client_type": 3
-            },
-            {
-              "client_id": "139313575789-8ivl99a2qkh2ds0smqd1md5cc1ups9q6.apps.googleusercontent.com",
-              "client_type": 2,
-              "ios_info": {
-                "bundle_id": "com.carstuneup.customerapp"
-              }
             }
           ]
         }

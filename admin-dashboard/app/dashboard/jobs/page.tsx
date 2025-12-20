@@ -120,16 +120,16 @@ export default function JobsPage() {
             <div className="flex justify-between items-start mb-4">
               <div className="flex-1">
                 <h3 className="text-lg font-bold text-gray-900 mb-2">
-                  {job.subscriptionId?.serviceId?.name || 'Service'}
+                  {job.serviceId?.name || 'Service'}
                 </h3>
                 <div className="flex flex-wrap gap-4 text-sm text-gray-600">
                   <div className="flex items-center">
                     <User className="w-4 h-4 mr-2" />
-                    <span>{job.subscriptionId?.userId?.name || 'N/A'}</span>
+                    <span>{job.customerId?.name || 'N/A'}</span>
                   </div>
                   <div className="flex items-center">
                     <MapPin className="w-4 h-4 mr-2" />
-                    <span>{job.subscriptionId?.userId?.area || 'N/A'}</span>
+                    <span>{job.customerId?.area || job.customerId?.address?.city || 'N/A'}</span>
                   </div>
                   <div className="flex items-center">
                     <Calendar className="w-4 h-4 mr-2" />
@@ -147,9 +147,9 @@ export default function JobsPage() {
                 <CheckCircle className="w-4 h-4 mr-2 text-green-600" />
                 <span>Assigned to: <strong>{job.employeeId?.userId?.name || 'Unassigned'}</strong></span>
               </div>
-              {job.completedAt && (
+              {job.completedDate && (
                 <div className="text-sm text-gray-500">
-                  Completed: {formatDate(job.completedAt)}
+                  Completed: {formatDate(job.completedDate)}
                 </div>
               )}
             </div>

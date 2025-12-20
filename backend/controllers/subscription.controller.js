@@ -352,16 +352,19 @@ exports.assignEmployee = async (req, res) => {
       }
     }
     
-    // Notify customer
+    // Notify customer about employee assignment and schedule
     if (subscription.userId.fcmToken) {
       try {
         await sendPushNotification(
           subscription.userId.fcmToken,
-          'Subscription Confirmed',
-          `Your ${subscription.serviceId.name} subscription has been confirmed. ${scheduleResult.jobsCreated} wash schedules have been created.`,
+          '👨‍🔧 Employee Assigned & Schedule Sent',
+          `Great news! ${employee.userId.name} has been assigned to your ${subscription.serviceId.name} service. ${scheduleResult.jobsCreated} service schedules have been created and sent to you.`,
           {
             subscriptionId: subscription._id.toString(),
-            type: 'subscription_confirmed'
+            employeeName: employee.userId.name,
+            serviceName: subscription.serviceId.name,
+            jobsCreated: scheduleResult.jobsCreated,
+            type: 'employee_assigned'
           }
         );
       } catch (error) {

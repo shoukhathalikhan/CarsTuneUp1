@@ -10,8 +10,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-const WHATSAPP_NUMBER = '+917337718170'; // CarsTuneUp WhatsApp business number
-const WHATSAPP_MESSAGE = 'Hello CarsTuneUp, I want to apply for car insurance.';
+const WHATSAPP_NUMBER = '+917337718170'; // CarzTuneUp WhatsApp business number
+const WHATSAPP_MESSAGE = 'Hello CarzTuneUp, I want to apply for car insurance.';
 
 export default function InsuranceScreen() {
   const openWhatsApp = async () => {

@@ -12,6 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useCart } from '../context/CartContext';
 import { useApp } from '../context/AppContext';
 import api from '../config/api';
+import { sendLocalNotification } from '../services/notificationService';
 import { wp, hp, rfs, getStatusBarHeight, getBottomSpace, spacing } from '../utils/responsive';
 
 const formatCurrency = (amount) => {
@@ -56,6 +57,7 @@ export default function PaymentScreen({ navigation, route }) {
 
   const cartItem = cartItems[0] || orderData;
   const totalAmount = cartItem?.totalAmount || 0;
+  const serviceName = cartItem?.serviceName || cartItem?.name || 'service';
 
   const handlePaymentMethodSelect = (methodId) => {
     setSelectedMethod(methodId);
@@ -89,12 +91,23 @@ export default function PaymentScreen({ navigation, route }) {
       // Clear cart after successful subscription creation
       clearCart();
 
+      // Send immediate notification
+      await sendLocalNotification(
+        '🎉 Service Booked Successfully!',
+        `Your ${serviceName} subscription has been created. We will send you the scheduled service dates very soon.`,
+        {
+          type: 'booking_confirmed',
+          serviceName: serviceName,
+          subscriptionId: response.data?.data?._id,
+        }
+      );
+
       Alert.alert(
-        'Subscription Created Successfully',
-        'Your subscription has been created with "Pending" status. Our admin team will review and assign an employee to you shortly.',
+        '🎉 Service Booked Successfully!',
+        `Thank you for booking with CarzTuneUp!\n\n✅ Your ${serviceName} subscription has been created.\n\n📅 We will send you the scheduled service dates very soon.\n\n👨‍🔧 Our admin team is reviewing your booking and will assign a professional employee to you shortly.\n\nYou'll receive a notification once everything is confirmed!`,
         [
           {
-            text: 'View Subscriptions',
+            text: 'View My Subscriptions',
             onPress: () => {
               navigation.navigate('MainTabs', { screen: 'Subscriptions' });
             }

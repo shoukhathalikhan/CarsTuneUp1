@@ -7,6 +7,9 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
+  Alert,
+  ToastAndroid,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../config/api';
@@ -31,22 +34,38 @@ export default function NotificationsScreen({ navigation }) {
       const mockNotifications = [
         {
           _id: '1',
-          type: 'next_wash',
-          title: 'Next Wash Scheduled',
-          message: 'Your next car wash is scheduled for tomorrow at 10:00 AM. Our team will arrive at your location.',
+          type: 'booking_confirmed',
+          title: '🎉 Service Booked Successfully!',
+          message: 'Thank you for booking with CarzTuneUp! Your service subscription has been created. We will send you the scheduled service dates very soon.',
           read: false,
           createdAt: new Date().toISOString(),
         },
         {
           _id: '2',
-          type: 'wash_completed',
-          title: 'Car Wash Completed',
-          message: 'Your car wash has been completed successfully! Thank you for choosing our service.',
+          type: 'employee_assigned',
+          title: '👨‍🔧 Employee Assigned',
+          message: 'Great news! A professional employee has been assigned to your service. You will receive the schedule details shortly.',
+          read: false,
+          createdAt: new Date(Date.now() - 1800000).toISOString(),
+        },
+        {
+          _id: '3',
+          type: 'next_wash',
+          title: '📅 Next Service Scheduled',
+          message: 'Your next car wash is scheduled for tomorrow at 10:00 AM. Our team will arrive at your location on time.',
           read: false,
           createdAt: new Date(Date.now() - 3600000).toISOString(),
         },
         {
-          _id: '3',
+          _id: '4',
+          type: 'wash_completed',
+          title: '✅ Service Completed',
+          message: 'Your car wash has been completed successfully! Thank you for choosing CarzTuneUp. We hope to serve you again.',
+          read: false,
+          createdAt: new Date(Date.now() - 7200000).toISOString(),
+        },
+        {
+          _id: '5',
           type: 'employee_assigned',
           title: 'Employee Assigned',
           message: 'Rajesh Kumar has been assigned as your dedicated car wash professional.',
@@ -54,7 +73,7 @@ export default function NotificationsScreen({ navigation }) {
           createdAt: new Date(Date.now() - 86400000).toISOString(),
         },
         {
-          _id: '4',
+          _id: '6',
           type: 'subscription',
           title: 'Subscription Active',
           message: 'Your monthly subscription is now active',
@@ -92,35 +111,81 @@ export default function NotificationsScreen({ navigation }) {
   };
 
   const clearAll = () => {
-    // TODO: API call to clear all notifications
-    setNotifications([]);
+    Alert.alert(
+      'Clear All Notifications',
+      'Are you sure you want to clear all notifications?',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Clear All',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              // TODO: API call to clear all notifications
+              // await api.delete('/notifications/clear-all');
+              setNotifications([]);
+              if (Platform.OS === 'android') {
+                ToastAndroid.show('All notifications cleared', ToastAndroid.SHORT);
+              }
+            } catch (error) {
+              console.error('Error clearing notifications:', error);
+              Alert.alert('Error', 'Failed to clear notifications');
+            }
+          },
+        },
+      ]
+    );
   };
 
   const getNotificationIcon = (type) => {
     switch (type) {
+      case 'booking_confirmed':
+        return { name: 'checkmark-circle-outline', color: '#10B981' };
+      case 'employee_assigned':
+        return { name: 'person-outline', color: '#1453b4' };
+      case 'next_wash':
+        return { name: 'calendar-outline', color: '#FFA500' };
+      case 'wash_completed':
+        return { name: 'checkmark-done-outline', color: '#28A745' };
       case 'wash_reminder':
         return { name: 'time-outline', color: '#FFA500' };
-      case 'wash_completed':
-        return { name: 'checkmark-circle-outline', color: '#28A745' };
       case 'subscription':
         return { name: 'card-outline', color: '#1453b4' };
+      case 'new_service':
+        return { name: 'sparkles-outline', color: '#8B5CF6' };
       default:
         return { name: 'notifications-outline', color: '#666' };
     }
   };
 
   const formatTime = (dateString) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffMs = now - date;
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
+    try {
+      const date = new Date(dateString);
+      const now = new Date();
+      const diffMs = now - date;
+      
+      // Handle invalid dates
+      if (isNaN(date.getTime())) {
+        return 'Just now';
+      }
+      
+      const diffSecs = Math.floor(diffMs / 1000);
+      const diffMins = Math.floor(diffMs / 60000);
+      const diffHours = Math.floor(diffMs / 3600000);
+      const diffDays = Math.floor(diffMs / 86400000);
 
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays < 7) return `${diffDays}d ago`;
-    return date.toLocaleDateString();
+      if (diffSecs < 60) return 'Just now';
+      if (diffMins < 60) return `${diffMins}m ago`;
+      if (diffHours < 24) return `${diffHours}h ago`;
+      if (diffDays < 7) return `${diffDays}d ago`;
+      if (diffDays < 30) return `${Math.floor(diffDays / 7)}w ago`;
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    } catch (error) {
+      return 'Just now';
+    }
   };
 
   const renderNotification = ({ item }) => {

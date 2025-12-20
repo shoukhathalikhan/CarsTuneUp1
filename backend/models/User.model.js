@@ -23,8 +23,9 @@ const userSchema = new mongoose.Schema({
   },
   phone: {
     type: String,
-    required: [true, 'Phone number is required'],
-    trim: true
+    required: false,
+    trim: true,
+    default: null
   },
   role: {
     type: String,
@@ -139,6 +140,23 @@ const userSchema = new mongoose.Schema({
   }
 }, {
   timestamps: true
+});
+
+// Auto-populate area from address
+userSchema.pre('save', function(next) {
+  if (this.isModified('address') || this.isModified('addresses')) {
+    if (!this.area || this.area === 'N/A') {
+      if (this.address && this.address.city) {
+        this.area = `${this.address.city}${this.address.state ? ', ' + this.address.state : ''}`;
+      } else if (this.addresses && this.addresses.length > 0) {
+        const primaryAddress = this.addresses.find(addr => addr.isPrimary) || this.addresses[0];
+        if (primaryAddress && primaryAddress.city) {
+          this.area = `${primaryAddress.city}${primaryAddress.state ? ', ' + primaryAddress.state : ''}`;
+        }
+      }
+    }
+  }
+  next();
 });
 
 // Hash password before saving
