@@ -27,34 +27,14 @@ const { assignJobsAutomatically, sendUpcomingWashNotifications } = require('./se
 // Initialize Express app
 const app = express();
 
-// Middleware - Allow all origins in development for mobile apps
+// Middleware - Allow all origins for mobile apps
 app.use(cors({
   origin: function(origin, callback) {
     // Allow requests with no origin (like mobile apps, Postman, or Expo Go)
     if (!origin) return callback(null, true);
     
-    // In development, allow all origins for easier mobile app testing
-    if (process.env.NODE_ENV === 'development') {
-      return callback(null, true);
-    }
-    
-    // Allow all localhost origins
-    if (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')) {
-      return callback(null, true);
-    }
-    
-    // Allow specific origins from environment
-    const allowedOrigins = [
-      process.env.ADMIN_DASHBOARD_URL,
-      process.env.CUSTOMER_APP_URL,
-      process.env.EMPLOYEE_APP_URL
-    ].filter(Boolean);
-    
-    if (allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
-    
-    callback(new Error('Not allowed by CORS'));
+    // Allow all origins for mobile app compatibility
+    return callback(null, true);
   },
   credentials: true
 }));
