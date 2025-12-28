@@ -18,7 +18,7 @@ type ChatThreadDoc = {
 
 export default function ChatsPage() {
   const router = useRouter()
-  const [threads, setThreads] = useState<{ id: string } & ChatThreadDoc[]>([] as any)
+  const [threads, setThreads] = useState<Array<{ id: string } & ChatThreadDoc>>([])
 
   const adminId = useMemo(() => {
     try {
