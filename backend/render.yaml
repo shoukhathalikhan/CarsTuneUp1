@@ -1,0 +1,41 @@
+services:
+  - type: web
+    name: carstuneup-backend
+    env: node
+    region: oregon
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 5000
+      - key: MONGODB_URI
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: JWT_EXPIRE
+        value: 7d
+      - key: FIREBASE_PROJECT_ID
+        sync: false
+      - key: FIREBASE_PRIVATE_KEY
+        sync: false
+      - key: FIREBASE_CLIENT_EMAIL
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+      - key: ADMIN_DASHBOARD_URL
+        value: https://admin-dashboard-gr6yld5by-shoukhat2003-gmailcoms-projects.vercel.app
+      - key: CUSTOMER_APP_URL
+        value: "*"
+      - key: EMPLOYEE_APP_URL
+        value: "*"
+      - key: CORS_ORIGIN
+        value: "*"
